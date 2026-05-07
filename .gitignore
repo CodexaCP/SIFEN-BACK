@@ -1,0 +1,14 @@
+bin/
+obj/
+.vs/
+.vscode/
+logs/
+*.user
+*.suo
+TestResults/
+coverage/
+*.trx
+*.nupkg
+appsettings.Local.json
+*.pfx
+*.p12

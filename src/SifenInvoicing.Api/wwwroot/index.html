@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Factura Electronica</title>
+  <style>
+    :root {
+      --bg: #f7f7f2;
+      --card: #ffffff;
+      --text: #111827;
+      --muted: #6b7280;
+      --line: #d1d5db;
+      --brand: #0f766e;
+      --brand-soft: #ccfbf1;
+      --danger: #b91c1c;
+      --warning: #92400e;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Arial, sans-serif; background: linear-gradient(180deg, #f7f7f2 0%, #eef6f4 100%); color: var(--text); }
+    .page { max-width: 1240px; margin: 0 auto; padding: 24px; }
+    .hero { display: grid; gap: 16px; grid-template-columns: 1.2fr .8fr; margin-bottom: 20px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; box-shadow: 0 10px 30px rgba(17, 24, 39, 0.05); }
+    .hero h1 { margin: 0 0 8px; font-size: 28px; }
+    .hero p, .hint, .muted { color: var(--muted); }
+    .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+    label { display: block; margin: 0 0 6px; font-weight: 700; font-size: 13px; }
+    input, select, button, textarea { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: white; }
+    button { cursor: pointer; font-weight: 700; }
+    .primary { background: var(--brand); color: white; border-color: var(--brand); }
+    .secondary { background: white; color: var(--text); }
+    .toolbar { display: flex; gap: 10px; flex-wrap: wrap; }
+    .toolbar > * { flex: 1 1 160px; }
+    .stats { display: grid; gap: 10px; grid-template-columns: repeat(3, 1fr); }
+    .pill { display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 700; background: #f3f4f6; }
+    .pill.accepted { background: #dcfce7; color: #166534; }
+    .pill.rejected, .pill.failed { background: #fee2e2; color: #991b1b; }
+    .pill.submitted { background: #e0f2fe; color: #075985; }
+    .pill.signed, .pill.pendingsubmission { background: #fef3c7; color: #92400e; }
+    .layout { display: grid; gap: 20px; grid-template-columns: 1.2fr .8fr; align-items: start; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: left; vertical-align: top; }
+    th { font-size: 12px; text-transform: uppercase; color: var(--muted); letter-spacing: .03em; }
+    tr:hover { background: #f9fafb; }
+    .row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .detail-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .detail-grid .full { grid-column: 1 / -1; }
+    .box { background: #f9fafb; border-radius: 10px; padding: 12px; border: 1px solid #eef2f7; min-height: 64px; }
+    pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; }
+    .error { color: var(--danger); font-weight: 700; }
+    .warning { color: var(--warning); font-weight: 700; }
+    .hidden { display: none; }
+    @media (max-width: 980px) { .hero, .layout { grid-template-columns: 1fr; } .stats { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <div class="card">
+        <h1>Panel Operativo FE</h1>
+        <p>Consulta operativa minima de facturas electronicas TipoDoc 01.</p>
+        <div class="grid">
+          <div>
+            <label for="tenantId">Tenant Id</label>
+            <input id="tenantId" placeholder="GUID del tenant">
+          </div>
+          <div>
+            <label for="statusFilter">Estado</label>
+            <select id="statusFilter">
+              <option value="">Todos</option>
+              <option value="DraftGenerated">DraftGenerated</option>
+              <option value="Signed">Signed</option>
+              <option value="PendingSubmission">PendingSubmission</option>
+              <option value="Submitted">Submitted</option>
+              <option value="Accepted">Accepted</option>
+              <option value="Rejected">Rejected</option>
+              <option value="Failed">Failed</option>
+            </select>
+          </div>
+          <div>
+            <label for="dateFrom">Fecha desde</label>
+            <input id="dateFrom" type="date">
+          </div>
+          <div>
+            <label for="dateTo">Fecha hasta</label>
+            <input id="dateTo" type="date">
+          </div>
+          <div>
+            <label for="cdcFilter">Buscar CDC</label>
+            <input id="cdcFilter" placeholder="CDC parcial o completo">
+          </div>
+          <div>
+            <label for="numberFilter">Numero factura</label>
+            <input id="numberFilter" placeholder="0000001">
+          </div>
+        </div>
+        <div class="toolbar" style="margin-top:14px">
+          <button id="searchButton" class="primary" type="button">Buscar facturas</button>
+          <button id="clearButton" class="secondary" type="button">Limpiar filtros</button>
+          <button id="seedDateButton" class="secondary" type="button">Hoy</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="stats">
+          <div class="box">
+            <div class="muted">Resultados</div>
+            <div id="resultCount" style="font-size:28px;font-weight:700">0</div>
+          </div>
+          <div class="box">
+            <div class="muted">Aceptadas</div>
+            <div id="acceptedCount" style="font-size:28px;font-weight:700">0</div>
+          </div>
+          <div class="box">
+            <div class="muted">Con error</div>
+            <div id="errorCount" style="font-size:28px;font-weight:700">0</div>
+          </div>
+        </div>
+        <div class="box" style="margin-top:12px">
+          <strong>Uso rapido</strong>
+          <p class="hint">Ingresa el <code>Tenant Id</code>, filtra por estado, CDC, numero o rango de fechas y abre el detalle para descargar XML o KuDE.</p>
+          <div id="globalMessage" class="hint">Listo.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" style="margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+        <div>
+          <h2 style="margin:0">Diagnostico FE por tenant</h2>
+          <div class="muted">Readiness operativo minimo para emision FE.</div>
+        </div>
+        <span id="diagnosticStatusPill" class="pill hidden"></span>
+      </div>
+      <div class="row-actions" style="margin-bottom:12px">
+        <button id="diagnosticButton" class="secondary" type="button">Actualizar diagnostico</button>
+      </div>
+      <div class="detail-grid">
+        <div class="box"><strong>Estado</strong><pre id="diagnosticSummary">Sin diagnostico.</pre></div>
+        <div class="box"><strong>Ultimo envio</strong><pre id="diagnosticLastSubmission">Sin datos.</pre></div>
+        <div class="box"><strong>Ultimo error</strong><pre id="diagnosticLastError">Sin datos.</pre></div>
+        <div class="box full"><strong>Checks</strong><pre id="diagnosticChecks">Sin diagnostico.</pre></div>
+      </div>
+    </section>
+
+    <section class="layout">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+          <div>
+            <h2 style="margin:0">Listado FE</h2>
+            <div class="muted">Hasta 200 resultados por consulta.</div>
+          </div>
+        </div>
+        <div style="overflow:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Factura</th>
+                <th>CDC</th>
+                <th>Receptor</th>
+                <th>Estado</th>
+                <th>SIFEN</th>
+                <th>Total</th>
+                <th>Fecha</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="invoiceRows">
+              <tr><td colspan="8" class="muted">Sin resultados.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
+          <div>
+            <h2 style="margin:0">Detalle</h2>
+            <div class="muted">Selecciona una factura del listado.</div>
+          </div>
+          <span id="detailStatusPill" class="pill hidden"></span>
+        </div>
+        <div id="detailEmpty" class="box">No hay factura seleccionada.</div>
+        <div id="detailPanel" class="hidden">
+          <div class="row-actions" style="margin-bottom:12px">
+            <button id="downloadXmlButton" class="secondary" type="button">Descargar XML</button>
+            <button id="downloadKudeButton" class="secondary" type="button">Descargar KuDE</button>
+          </div>
+          <div class="detail-grid">
+            <div class="box"><strong>Factura</strong><pre id="detailNumber"></pre></div>
+            <div class="box"><strong>CDC</strong><pre id="detailCdc"></pre></div>
+            <div class="box"><strong>Emisor</strong><pre id="detailEmitter"></pre></div>
+            <div class="box"><strong>Receptor</strong><pre id="detailReceiver"></pre></div>
+            <div class="box"><strong>Moneda</strong><pre id="detailCurrency"></pre></div>
+            <div class="box"><strong>Total</strong><pre id="detailTotal"></pre></div>
+            <div class="box"><strong>Estado SIFEN</strong><pre id="detailSifenState"></pre></div>
+            <div class="box"><strong>Tracking</strong><pre id="detailTracking"></pre></div>
+            <div class="box full"><strong>Mensaje</strong><pre id="detailMessage"></pre></div>
+            <div class="box full"><strong>Items / XML resumen</strong><pre id="detailXmlPreview"></pre></div>
+            <div class="box full"><strong>Logs relevantes</strong><pre id="detailLogs"></pre></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const state = { rows: [], selected: null };
+    const els = {
+      tenantId: document.getElementById("tenantId"),
+      statusFilter: document.getElementById("statusFilter"),
+      dateFrom: document.getElementById("dateFrom"),
+      dateTo: document.getElementById("dateTo"),
+      cdcFilter: document.getElementById("cdcFilter"),
+      numberFilter: document.getElementById("numberFilter"),
+      searchButton: document.getElementById("searchButton"),
+      clearButton: document.getElementById("clearButton"),
+      seedDateButton: document.getElementById("seedDateButton"),
+      rows: document.getElementById("invoiceRows"),
+      resultCount: document.getElementById("resultCount"),
+      acceptedCount: document.getElementById("acceptedCount"),
+      errorCount: document.getElementById("errorCount"),
+      globalMessage: document.getElementById("globalMessage"),
+      diagnosticButton: document.getElementById("diagnosticButton"),
+      diagnosticStatusPill: document.getElementById("diagnosticStatusPill"),
+      diagnosticSummary: document.getElementById("diagnosticSummary"),
+      diagnosticLastSubmission: document.getElementById("diagnosticLastSubmission"),
+      diagnosticLastError: document.getElementById("diagnosticLastError"),
+      diagnosticChecks: document.getElementById("diagnosticChecks"),
+      detailPanel: document.getElementById("detailPanel"),
+      detailEmpty: document.getElementById("detailEmpty"),
+      detailStatusPill: document.getElementById("detailStatusPill"),
+      detailNumber: document.getElementById("detailNumber"),
+      detailCdc: document.getElementById("detailCdc"),
+      detailEmitter: document.getElementById("detailEmitter"),
+      detailReceiver: document.getElementById("detailReceiver"),
+      detailCurrency: document.getElementById("detailCurrency"),
+      detailTotal: document.getElementById("detailTotal"),
+      detailSifenState: document.getElementById("detailSifenState"),
+      detailTracking: document.getElementById("detailTracking"),
+      detailMessage: document.getElementById("detailMessage"),
+      detailXmlPreview: document.getElementById("detailXmlPreview"),
+      detailLogs: document.getElementById("detailLogs"),
+      downloadXmlButton: document.getElementById("downloadXmlButton"),
+      downloadKudeButton: document.getElementById("downloadKudeButton")
+    };
+
+    function getTenantId() {
+      return els.tenantId.value.trim();
+    }
+
+    function buildHeaders() {
+      const tenantId = getTenantId();
+      return tenantId ? { "X-Tenant-Id": tenantId } : {};
+    }
+
+    function setMessage(text, type = "info") {
+      els.globalMessage.textContent = text;
+      els.globalMessage.className = type === "error" ? "error" : type === "warning" ? "warning" : "hint";
+    }
+
+    function statusClass(status) {
+      return String(status || "").toLowerCase().replace(/\s+/g, "");
+    }
+
+    function formatAmount(value, currency) {
+      const amount = Number(value || 0);
+      return `${amount.toLocaleString("es-PY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency || ""}`.trim();
+    }
+
+    function updateStats() {
+      els.resultCount.textContent = String(state.rows.length);
+      els.acceptedCount.textContent = String(state.rows.filter(x => x.status === "Accepted").length);
+      els.errorCount.textContent = String(state.rows.filter(x => x.status === "Rejected" || x.status === "Failed").length);
+    }
+
+    function renderRows() {
+      if (!state.rows.length) {
+        els.rows.innerHTML = `<tr><td colspan="8" class="muted">Sin resultados.</td></tr>`;
+        updateStats();
+        return;
+      }
+
+      els.rows.innerHTML = state.rows.map(row => `
+        <tr data-id="${row.id}">
+          <td><strong>${row.establishmentCode}-${row.expeditionPointCode}-${row.externalDocumentNumber}</strong></td>
+          <td>${row.cdc}</td>
+          <td>${row.receiverName}</td>
+          <td><span class="pill ${statusClass(row.status)}">${row.status}</span></td>
+          <td>${row.statusCode || "-"}<br><span class="muted">${row.statusMessage || ""}</span></td>
+          <td>${formatAmount(row.totalAmount, row.currencyCode)}</td>
+          <td>${new Date(row.issuedAt).toLocaleString("es-PY")}</td>
+          <td><button type="button" class="secondary" data-open="${row.id}">Ver detalle</button></td>
+        </tr>`).join("");
+
+      updateStats();
+      els.rows.querySelectorAll("button[data-open]").forEach(button => {
+        button.addEventListener("click", () => loadDetail(button.dataset.open));
+      });
+    }
+
+    async function fetchJson(url) {
+      const response = await fetch(url, { headers: buildHeaders() });
+      if (!response.ok) {
+        let message = `HTTP ${response.status}`;
+        try {
+          const body = await response.json();
+          message = body.detail || body.title || message;
+        } catch {}
+        throw new Error(message);
+      }
+      return response.json();
+    }
+
+    async function searchInvoices() {
+      if (!getTenantId()) {
+        setMessage("Debes ingresar el Tenant Id para consultar.", "warning");
+        return;
+      }
+
+      const params = new URLSearchParams();
+      if (els.statusFilter.value) params.set("status", els.statusFilter.value);
+      if (els.cdcFilter.value.trim()) params.set("cdc", els.cdcFilter.value.trim());
+      if (els.numberFilter.value.trim()) params.set("number", els.numberFilter.value.trim());
+      if (els.dateFrom.value) params.set("dateFrom", els.dateFrom.value);
+      if (els.dateTo.value) params.set("dateTo", els.dateTo.value);
+
+      setMessage("Consultando facturas...");
+      try {
+        await loadDiagnostic();
+        state.rows = await fetchJson(`/invoice?${params.toString()}`);
+        state.selected = null;
+        resetDetail();
+        renderRows();
+        setMessage(`Consulta completada: ${state.rows.length} factura(s).`);
+      } catch (error) {
+        state.rows = [];
+        renderRows();
+        setMessage(error.message, "error");
+      }
+    }
+
+    async function loadDiagnostic() {
+      if (!getTenantId()) {
+        renderDiagnostic(null);
+        return;
+      }
+
+      const diagnostic = await fetchJson(`/ops/fe-diagnostic`);
+      renderDiagnostic(diagnostic);
+    }
+
+    function renderDiagnostic(diagnostic) {
+      if (!diagnostic) {
+        els.diagnosticStatusPill.classList.add("hidden");
+        els.diagnosticSummary.textContent = "Debes ingresar el Tenant Id para evaluar readiness FE.";
+        els.diagnosticLastSubmission.textContent = "Sin datos.";
+        els.diagnosticLastError.textContent = "Sin datos.";
+        els.diagnosticChecks.textContent = "Sin diagnostico.";
+        return;
+      }
+
+      els.diagnosticStatusPill.classList.remove("hidden");
+      els.diagnosticStatusPill.className = `pill ${diagnostic.isReady ? "accepted" : "failed"}`;
+      els.diagnosticStatusPill.textContent = diagnostic.isReady ? "READY" : "NOT READY";
+      els.diagnosticSummary.textContent = `${diagnostic.summary}\nAmbiente: ${diagnostic.environment}`;
+      els.diagnosticLastSubmission.textContent = diagnostic.lastSubmission
+        ? `${diagnostic.lastSubmission.status}\n${diagnostic.lastSubmission.cdc}\n${diagnostic.lastSubmission.submittedAt ? new Date(diagnostic.lastSubmission.submittedAt).toLocaleString("es-PY") : "-"}\n${diagnostic.lastSubmission.endpoint || "-"}`
+        : "Sin envios registrados.";
+      els.diagnosticLastError.textContent = diagnostic.lastError
+        ? `${diagnostic.lastError.status}\n${diagnostic.lastError.cdc}\n${diagnostic.lastError.statusCode || "-"}\n${diagnostic.lastError.statusMessage || "-"}`
+        : "Sin errores registrados.";
+      els.diagnosticChecks.textContent = (diagnostic.checks || []).map(check =>
+        `[${check.isReady ? "OK" : "PEND"}] ${check.name} - ${check.message}`
+      ).join("\n");
+    }
+
+    function resetDetail() {
+      els.detailPanel.classList.add("hidden");
+      els.detailEmpty.classList.remove("hidden");
+      els.detailStatusPill.classList.add("hidden");
+      els.detailStatusPill.textContent = "";
+    }
+
+    async function loadDetail(id) {
+      setMessage("Cargando detalle...");
+      try {
+        const detail = await fetchJson(`/invoice/${id}`);
+        state.selected = detail;
+        renderDetail(detail);
+        setMessage(`Detalle cargado para la factura ${detail.externalDocumentNumber}.`);
+      } catch (error) {
+        setMessage(error.message, "error");
+      }
+    }
+
+    function renderDetail(detail) {
+      els.detailEmpty.classList.add("hidden");
+      els.detailPanel.classList.remove("hidden");
+      els.detailStatusPill.classList.remove("hidden");
+      els.detailStatusPill.className = `pill ${statusClass(detail.status)}`;
+      els.detailStatusPill.textContent = detail.status;
+      els.detailNumber.textContent = `${detail.establishmentCode}-${detail.expeditionPointCode}-${detail.externalDocumentNumber}`;
+      els.detailCdc.textContent = detail.cdc;
+      els.detailEmitter.textContent = extractEmitterName(detail.xmlPayload);
+      els.detailReceiver.textContent = `${detail.receiverName}\n${detail.receiverDocument}`;
+      els.detailCurrency.textContent = detail.currencyCode;
+      els.detailTotal.textContent = formatAmount(detail.totalAmount, detail.currencyCode);
+      els.detailSifenState.textContent = `${detail.statusCode || "-"}\n${detail.statusMessage || ""}`.trim();
+      els.detailTracking.textContent = detail.sifenTrackingId || "-";
+      els.detailMessage.textContent = detail.statusMessage || "Sin mensaje.";
+      els.detailXmlPreview.textContent = buildXmlPreview(detail.xmlPayload);
+      els.detailLogs.textContent = (detail.logs || []).slice(-8).map(log =>
+        `[${new Date(log.occurredAt).toLocaleString("es-PY")}] ${log.level} ${log.eventType} - ${log.message}`
+      ).join("\n") || "Sin logs.";
+
+      els.downloadXmlButton.onclick = () => window.open(`/invoice/${detail.id}/xml`, "_blank");
+      els.downloadKudeButton.onclick = async () => {
+        try {
+          const response = await fetch(`/invoice/${detail.id}/kude`, { headers: buildHeaders() });
+          if (!response.ok) {
+            let message = "KuDE no disponible para esta factura.";
+            try {
+              const body = await response.json();
+              message = body.detail || body.title || message;
+            } catch {}
+            throw new Error(message);
+          }
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = `kude-${detail.externalDocumentNumber}.pdf`;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          URL.revokeObjectURL(url);
+          setMessage("KuDE descargado correctamente.");
+        } catch (error) {
+          setMessage(error.message, "warning");
+        }
+      };
+    }
+
+    function extractEmitterName(xml) {
+      const match = xml.match(/<xNomEmi>(.*?)<\/xNomEmi>/);
+      return match ? decodeXml(match[1]) : "N/D";
+    }
+
+    function buildXmlPreview(xml) {
+      const text = xml
+        .replace(/></g, ">\n<")
+        .split("\n")
+        .filter(line => /xDesProSer|dCantProSer|dPUniProSer|dValTotItem|dTotGralOpe|dTotIVA|dSub5|dSub10|dSubExe/.test(line))
+        .slice(0, 20)
+        .join("\n");
+      return text || "Sin resumen XML.";
+    }
+
+    function decodeXml(text) {
+      return text.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+    }
+
+    els.searchButton.addEventListener("click", searchInvoices);
+    els.clearButton.addEventListener("click", () => {
+      els.statusFilter.value = "";
+      els.cdcFilter.value = "";
+      els.numberFilter.value = "";
+      els.dateFrom.value = "";
+      els.dateTo.value = "";
+      state.rows = [];
+      renderRows();
+      resetDetail();
+      setMessage("Filtros limpiados.");
+    });
+    els.seedDateButton.addEventListener("click", () => {
+      const today = new Date().toISOString().slice(0, 10);
+      els.dateFrom.value = today;
+      els.dateTo.value = today;
+    });
+    els.diagnosticButton.addEventListener("click", async () => {
+      try {
+        await loadDiagnostic();
+        setMessage("Diagnostico FE actualizado.");
+      } catch (error) {
+        renderDiagnostic(null);
+        setMessage(error.message, "warning");
+      }
+    });
+
+    renderDiagnostic(null);
+    resetDetail();
+    renderRows();
+  </script>
+</body>
+</html>
