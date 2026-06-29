@@ -1,0 +1,160 @@
+Usando la configuración de inicio de src\SifenInvoicing.Api\Properties\launchSettings.json...
+Compilando...
+[11:45:32 WRN] The 'FeInvoiceInternalStatus' property 'InternalStatus' on entity type 'SifenDocument' is configured with a database-generated default, but has no configured sentinel value. The database-generated default will always be used for inserts when the property has the value '0', since this is the CLR default for the 'FeInvoiceInternalStatus' type. Consider using a nullable type, using a nullable backing field, or setting the sentinel value for the property to ensure the database default is used when, and only when, appropriate. See https://aka.ms/efcore-docs-default-values for more information.
+[11:45:33 INF] Platform bootstrap user admin@sifen.local already exists. No duplicate created.
+[11:45:46 INF] Audit event api.request for ApiRequest ended with Completed
+[11:45:46 INF] Audit metadata: {"http.method": "GET", "http.path": "/health/live", "http.status_code": "200", "duration_ms": "94,78", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:45:46 INF] HTTP GET /health/live responded 200 in 136.0580 ms
+[11:45:47 INF] Audit event api.request for ApiRequest ended with Completed
+[11:45:47 INF] Audit metadata: {"http.method": "POST", "http.path": "/api/auth/login", "http.status_code": "200", "duration_ms": "315,85", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:45:47 INF] HTTP POST /api/auth/login responded 200 in 328.7215 ms
+[11:46:01 INF] Audit event api.request for ApiRequest ended with Completed
+[11:46:01 INF] Audit metadata: {"http.method": "POST", "http.path": "/api/auth/login", "http.status_code": "200", "duration_ms": "33,87", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:46:01 INF] HTTP POST /api/auth/login responded 200 in 35.2162 ms
+[11:46:01 INF] Audit event api.request for ApiRequest ended with Completed
+[11:46:01 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/auth/me", "http.status_code": "200", "duration_ms": "98,97", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:46:01 INF] HTTP GET /api/auth/me responded 200 in 99.5654 ms
+[11:46:01 INF] Audit event api.request for ApiRequest ended with Completed
+[11:46:01 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/platform/companies", "http.status_code": "200", "duration_ms": "53,01", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:46:01 INF] HTTP GET /api/platform/companies responded 200 in 53.4754 ms
+[11:46:01 INF] Audit event api.request for ApiRequest ended with Completed
+[11:46:01 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/fe/plan/", "http.status_code": "404", "duration_ms": "0,63", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:46:01 INF] HTTP GET /api/fe/plan/ responded 404 in 1.3151 ms
+[11:46:08 INF] Audit event api.request for ApiRequest ended with Completed
+[11:46:08 INF] Audit metadata: {"http.method": "POST", "http.path": "/api/auth/login", "http.status_code": "200", "duration_ms": "20,99", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:46:08 INF] HTTP POST /api/auth/login responded 200 in 21.5738 ms
+[11:46:08 INF] Audit event api.request for ApiRequest ended with Completed
+[11:46:08 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/platform/companies", "http.status_code": "200", "duration_ms": "5,63", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:46:08 INF] HTTP GET /api/platform/companies responded 200 in 6.0281 ms
+[11:46:10 INF] HTTP OPTIONS /api/auth/login responded 204 in 5.0926 ms
+[11:46:10 INF] Audit event api.request for ApiRequest ended with Completed
+[11:46:10 INF] Audit metadata: {"http.method": "POST", "http.path": "/api/auth/login", "http.status_code": "200", "duration_ms": "27,40", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:46:10 INF] HTTP POST /api/auth/login responded 200 in 28.2978 ms
+[11:46:10 INF] HTTP OPTIONS /api/auth/me responded 204 in 0.1815 ms
+[11:46:10 INF] Audit event api.request for ApiRequest ended with Completed
+[11:46:10 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/auth/me", "http.status_code": "200", "duration_ms": "5,48", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:46:10 INF] HTTP GET /api/auth/me responded 200 in 6.2347 ms
+[11:46:10 INF] HTTP OPTIONS /api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/invoices responded 204 in 1.7535 ms
+[11:46:10 INF] HTTP OPTIONS /api/fe/plan/490671b4-8cae-486d-bdb4-530f5cae84dc responded 204 in 0.1430 ms
+[11:46:10 INF] HTTP OPTIONS /api/platform/companies responded 204 in 0.1104 ms
+[11:46:10 INF] HTTP OPTIONS /api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/diagnostic responded 204 in 0.2030 ms
+[11:46:10 INF] Audit event api.request for ApiRequest ended with Completed
+[11:46:10 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/platform/companies", "http.status_code": "200", "duration_ms": "7,26", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:46:10 INF] HTTP GET /api/platform/companies responded 200 in 10.3129 ms
+[11:46:10 INF] Audit event api.request for ApiRequest ended with Completed
+[11:46:10 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/diagnostic", "http.status_code": "200", "duration_ms": "139,19", "remote_ip": "::1", "tenant.resolved": "True", "taxpayer.ruc.present": "False"}
+[11:46:10 INF] HTTP GET /api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/diagnostic responded 200 in 140.1689 ms
+[11:46:10 INF] Audit event api.request for ApiRequest ended with Completed
+[11:46:10 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/fe/plan/490671b4-8cae-486d-bdb4-530f5cae84dc", "http.status_code": "200", "duration_ms": "149,62", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:46:10 INF] HTTP GET /api/fe/plan/490671b4-8cae-486d-bdb4-530f5cae84dc responded 200 in 150.8165 ms
+[11:46:10 INF] Audit event api.request for ApiRequest ended with Completed
+[11:46:10 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/invoices", "http.status_code": "200", "duration_ms": "172,31", "remote_ip": "::1", "tenant.resolved": "True", "taxpayer.ruc.present": "False"}
+[11:46:10 INF] HTTP GET /api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/invoices responded 200 in 173.4176 ms
+[11:46:19 INF] Audit event api.request for ApiRequest ended with Completed
+[11:46:19 INF] Audit metadata: {"http.method": "POST", "http.path": "/api/auth/login", "http.status_code": "200", "duration_ms": "43,50", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:46:19 INF] HTTP POST /api/auth/login responded 200 in 44.6185 ms
+[11:46:19 INF] Audit event api.request for ApiRequest ended with Completed
+[11:46:19 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/fe/plan/490671b4-8cae-486d-bdb4-530f5cae84dc", "http.status_code": "200", "duration_ms": "17,18", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:46:19 INF] HTTP GET /api/fe/plan/490671b4-8cae-486d-bdb4-530f5cae84dc responded 200 in 17.6340 ms
+[11:46:19 INF] Audit event api.request for ApiRequest ended with Completed
+[11:46:19 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/diagnostic", "http.status_code": "200", "duration_ms": "42,57", "remote_ip": "::1", "tenant.resolved": "True", "taxpayer.ruc.present": "False"}
+[11:46:19 INF] HTTP GET /api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/diagnostic responded 200 in 43.0951 ms
+[11:46:19 INF] Audit event api.request for ApiRequest ended with Completed
+[11:46:19 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/invoices", "http.status_code": "200", "duration_ms": "15,56", "remote_ip": "::1", "tenant.resolved": "True", "taxpayer.ruc.present": "False"}
+[11:46:19 INF] HTTP GET /api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/invoices responded 200 in 16.1834 ms
+[11:47:17 INF] HTTP OPTIONS /api/auth/login responded 204 in 0.2344 ms
+[11:47:17 INF] Audit event api.request for ApiRequest ended with Completed
+[11:47:17 INF] Audit metadata: {"http.method": "POST", "http.path": "/api/auth/login", "http.status_code": "200", "duration_ms": "26,27", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:47:17 INF] HTTP POST /api/auth/login responded 200 in 26.6848 ms
+[11:47:17 INF] HTTP OPTIONS /api/auth/me responded 204 in 0.0624 ms
+[11:47:17 INF] Audit event api.request for ApiRequest ended with Completed
+[11:47:17 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/auth/me", "http.status_code": "200", "duration_ms": "3,88", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:47:17 INF] HTTP GET /api/auth/me responded 200 in 4.4469 ms
+[11:47:17 INF] HTTP OPTIONS /api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/invoices responded 204 in 0.7944 ms
+[11:47:17 INF] HTTP OPTIONS /api/fe/plan/490671b4-8cae-486d-bdb4-530f5cae84dc responded 204 in 0.0525 ms
+[11:47:17 INF] HTTP OPTIONS /api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/diagnostic responded 204 in 0.1548 ms
+[11:47:17 INF] HTTP OPTIONS /api/platform/companies responded 204 in 0.0637 ms
+[11:47:17 INF] Audit event api.request for ApiRequest ended with Completed
+[11:47:17 INF] Audit event api.request for ApiRequest ended with Completed
+[11:47:17 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/invoices", "http.status_code": "200", "duration_ms": "14,49", "remote_ip": "::1", "tenant.resolved": "True", "taxpayer.ruc.present": "False"}
+[11:47:17 INF] HTTP GET /api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/invoices responded 200 in 14.9798 ms
+[11:47:17 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/platform/companies", "http.status_code": "200", "duration_ms": "12,67", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:47:17 INF] HTTP GET /api/platform/companies responded 200 in 13.3713 ms
+[11:47:17 INF] Audit event api.request for ApiRequest ended with Completed
+[11:47:17 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/fe/plan/490671b4-8cae-486d-bdb4-530f5cae84dc", "http.status_code": "200", "duration_ms": "17,21", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:47:17 INF] HTTP GET /api/fe/plan/490671b4-8cae-486d-bdb4-530f5cae84dc responded 200 in 17.8786 ms
+[11:47:17 INF] Audit event api.request for ApiRequest ended with Completed
+[11:47:17 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/diagnostic", "http.status_code": "200", "duration_ms": "34,14", "remote_ip": "::1", "tenant.resolved": "True", "taxpayer.ruc.present": "False"}
+[11:47:17 INF] HTTP GET /api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/diagnostic responded 200 in 35.6359 ms
+[11:48:39 INF] HTTP OPTIONS /api/auth/login responded 204 in 6.2150 ms
+[11:48:39 INF] Audit event api.request for ApiRequest ended with Completed
+[11:48:39 INF] Audit metadata: {"http.method": "POST", "http.path": "/api/auth/login", "http.status_code": "200", "duration_ms": "31,69", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:48:39 INF] HTTP POST /api/auth/login responded 200 in 32.1167 ms
+[11:48:39 INF] HTTP OPTIONS /api/auth/me responded 204 in 0.1677 ms
+[11:48:39 INF] Audit event api.request for ApiRequest ended with Completed
+[11:48:39 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/auth/me", "http.status_code": "200", "duration_ms": "6,13", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:48:39 INF] HTTP GET /api/auth/me responded 200 in 6.6598 ms
+[11:48:39 INF] HTTP OPTIONS /api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/invoices responded 204 in 0.0998 ms
+[11:48:39 INF] HTTP OPTIONS /api/fe/plan/490671b4-8cae-486d-bdb4-530f5cae84dc responded 204 in 0.1032 ms
+[11:48:39 INF] HTTP OPTIONS /api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/diagnostic responded 204 in 0.1542 ms
+[11:48:39 INF] HTTP OPTIONS /api/platform/companies responded 204 in 0.4618 ms
+[11:48:39 INF] Audit event api.request for ApiRequest ended with Completed
+[11:48:39 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/platform/companies", "http.status_code": "200", "duration_ms": "3,62", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:48:39 INF] HTTP GET /api/platform/companies responded 200 in 4.0291 ms
+[11:48:39 INF] Audit event api.request for ApiRequest ended with Completed
+[11:48:39 INF] Audit event api.request for ApiRequest ended with Completed
+[11:48:39 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/fe/plan/490671b4-8cae-486d-bdb4-530f5cae84dc", "http.status_code": "200", "duration_ms": "28,89", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:48:39 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/invoices", "http.status_code": "200", "duration_ms": "23,65", "remote_ip": "::1", "tenant.resolved": "True", "taxpayer.ruc.present": "False"}
+[11:48:39 INF] HTTP GET /api/fe/plan/490671b4-8cae-486d-bdb4-530f5cae84dc responded 200 in 29.5522 ms
+[11:48:39 INF] HTTP GET /api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/invoices responded 200 in 24.5669 ms
+[11:48:39 INF] Audit event api.request for ApiRequest ended with Completed
+[11:48:39 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/diagnostic", "http.status_code": "200", "duration_ms": "30,07", "remote_ip": "::1", "tenant.resolved": "True", "taxpayer.ruc.present": "False"}
+[11:48:39 INF] HTTP GET /api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/diagnostic responded 200 in 30.6340 ms
+[11:49:10 INF] HTTP OPTIONS /api/auth/login responded 204 in 0.1375 ms
+[11:49:10 INF] Audit event api.request for ApiRequest ended with Completed
+[11:49:10 INF] Audit metadata: {"http.method": "POST", "http.path": "/api/auth/login", "http.status_code": "200", "duration_ms": "29,94", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:49:10 INF] HTTP POST /api/auth/login responded 200 in 30.3462 ms
+[11:49:10 INF] HTTP OPTIONS /api/auth/me responded 204 in 0.1032 ms
+[11:49:10 INF] Audit event api.request for ApiRequest ended with Completed
+[11:49:10 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/auth/me", "http.status_code": "200", "duration_ms": "5,03", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:49:10 INF] HTTP GET /api/auth/me responded 200 in 5.4313 ms
+[11:49:10 INF] HTTP OPTIONS /api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/invoices responded 204 in 0.1431 ms
+[11:49:10 INF] HTTP OPTIONS /api/fe/plan/490671b4-8cae-486d-bdb4-530f5cae84dc responded 204 in 0.9028 ms
+[11:49:10 INF] HTTP OPTIONS /api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/diagnostic responded 204 in 0.0570 ms
+[11:49:10 INF] HTTP OPTIONS /api/platform/companies responded 204 in 0.1925 ms
+[11:49:10 INF] Audit event api.request for ApiRequest ended with Completed
+[11:49:10 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/platform/companies", "http.status_code": "200", "duration_ms": "7,44", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:49:10 INF] HTTP GET /api/platform/companies responded 200 in 7.8473 ms
+[11:49:10 INF] Audit event api.request for ApiRequest ended with Completed
+[11:49:10 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/invoices", "http.status_code": "200", "duration_ms": "15,09", "remote_ip": "::1", "tenant.resolved": "True", "taxpayer.ruc.present": "False"}
+[11:49:10 INF] HTTP GET /api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/invoices responded 200 in 15.8043 ms
+[11:49:10 INF] Audit event api.request for ApiRequest ended with Completed
+[11:49:10 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/fe/plan/490671b4-8cae-486d-bdb4-530f5cae84dc", "http.status_code": "200", "duration_ms": "15,14", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:49:10 INF] HTTP GET /api/fe/plan/490671b4-8cae-486d-bdb4-530f5cae84dc responded 200 in 15.6131 ms
+[11:49:10 INF] Audit event api.request for ApiRequest ended with Completed
+[11:49:10 INF] Audit metadata: {"http.method": "GET", "http.path": "/api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/diagnostic", "http.status_code": "200", "duration_ms": "23,49", "remote_ip": "::1", "tenant.resolved": "True", "taxpayer.ruc.present": "False"}
+[11:49:10 INF] HTTP GET /api/fe/tenants/490671b4-8cae-486d-bdb4-530f5cae84dc/diagnostic responded 200 in 24.1517 ms
+[16:59:12 INF] HTTP OPTIONS /api/auth/login responded 204 in 41.4542 ms
+[16:59:15 FTL] Audit event api.request for ApiRequest ended with UnhandledException
+[16:59:15 INF] Audit metadata: {"http.method": "POST", "http.path": "/api/auth/login", "http.status_code": "200", "duration_ms": "2740,64", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[16:59:15 INF] HTTP POST /api/auth/login responded 400 in 2904.8390 ms
+[16:59:57 WRN] As of "05/10/2026 19:59:55 +00:00", the heartbeat has been running for "00:00:01.0952104" which is longer than "00:00:01". This could be caused by thread pool starvation.
+[17:06:49 INF] HTTP OPTIONS /api/auth/login responded 204 in 20.6239 ms
+[17:06:50 FTL] Audit event api.request for ApiRequest ended with UnhandledException
+[17:06:50 INF] Audit metadata: {"http.method": "POST", "http.path": "/api/auth/login", "http.status_code": "200", "duration_ms": "949,89", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[17:06:50 INF] HTTP POST /api/auth/login responded 400 in 1007.3096 ms
+[10:36:41 INF] HTTP OPTIONS /api/Auth/login responded 204 in 8.6341 ms
+[10:36:42 FTL] Audit event api.request for ApiRequest ended with UnhandledException
+[10:36:42 INF] Audit metadata: {"http.method": "POST", "http.path": "/api/Auth/login", "http.status_code": "200", "duration_ms": "48,66", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[10:36:42 INF] HTTP POST /api/Auth/login responded 400 in 61.1531 ms
+[11:02:50 WRN] As of "05/11/2026 14:02:49 +00:00", the heartbeat has been running for "00:00:01.8037839" which is longer than "00:00:01". This could be caused by thread pool starvation.
+[11:03:54 INF] HTTP OPTIONS /api/Auth/login responded 204 in 51.8966 ms
+[11:03:54 FTL] Audit event api.request for ApiRequest ended with UnhandledException
+[11:03:54 INF] Audit metadata: {"http.method": "POST", "http.path": "/api/Auth/login", "http.status_code": "200", "duration_ms": "118,84", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:03:54 INF] HTTP POST /api/Auth/login responded 400 in 178.1581 ms
+[11:03:55 FTL] Audit event api.request for ApiRequest ended with UnhandledException
+[11:03:55 INF] Audit metadata: {"http.method": "POST", "http.path": "/api/Auth/login", "http.status_code": "200", "duration_ms": "7,82", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:03:55 INF] HTTP POST /api/Auth/login responded 400 in 10.1720 ms
+[11:03:56 FTL] Audit event api.request for ApiRequest ended with UnhandledException
+[11:03:56 INF] Audit metadata: {"http.method": "POST", "http.path": "/api/Auth/login", "http.status_code": "200", "duration_ms": "18,68", "remote_ip": "::1", "tenant.resolved": "False", "taxpayer.ruc.present": "False"}
+[11:03:56 INF] HTTP POST /api/Auth/login responded 400 in 22.4079 ms
