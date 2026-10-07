@@ -27,12 +27,12 @@ while [ ${#queue[@]} -gt 0 ]; do
     rm -f "$DEST/$f"; continue
   fi
   printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$f" "$url" "$(stat -c%s "$DEST/$f")" "$(sha256sum "$DEST/$f" | cut -d' ' -f1)" "$(date -u +%FT%TZ)" "$by" >> "$MAN"
-  # schemaLocation relativos (solo nombre de archivo; las URL absolutas externas se reportan)
+  # solo xs:import/include/redefine (no xsi:schemaLocation); las URL absolutas se reportan
   while IFS= read -r loc; do
     case "$loc" in
       http*) n="${loc##*/}"; echo "AVISO: $f referencia URL absoluta $loc (se intentara $n bajo $BASE)" >&2; queue+=("$n|$f") ;;
       *) queue+=("$loc|$f") ;;
     esac
-  done < <(grep -oP '(?:schemaLocation)\s*=\s*"\K[^"]+' "$DEST/$f" || true)
+  done < <(tr '\n' ' ' < "$DEST/$f" | grep -oP '<xs:(?:import|include|redefine)\b[^>]*?\bschemaLocation\s*=\s*"\K[^"]+' || true)
 done
 echo "Manifiesto: $MAN"; cut -c1-220 "$MAN"

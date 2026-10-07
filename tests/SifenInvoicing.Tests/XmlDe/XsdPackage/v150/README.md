@@ -1,8 +1,9 @@
-# Paquete XSD oficial SIFEN v150 (PENDIENTE DE DESCARGA)
+# Paquete XSD oficial SIFEN v150
 
-Vacío a propósito: el entorno de desarrollo no alcanza `ekuatia.set.gov.py`. Para poblarlo (desde la VPS, con red):
+Descargado de https://ekuatia.set.gov.py/sifen/xsd/ (listado del directorio + cierre recursivo de xs:import/xs:include)
+con `tools/sifen-xsd/fetch-xsd.sh`. Hashes SHA-256 y fechas en `MANIFEST.tsv` (calculados al descargar; DNIT no publica checksum).
+Los ficheros son copia exacta del servidor: NO editar. Para refrescar: `tools/sifen-xsd/fetch-xsd.sh <dir> <base> <raices>`.
 
-    tools/sifen-xsd/fetch-xsd.sh        # descarga recursiva + MANIFEST.tsv (SHA-256 calculado localmente)
-
-Luego ejecutar `dotnet test --filter FullyQualifiedName~XmlDe`. Los tests `Xsd*` se omiten mientras no exista
-`siRecepDE_v150.xsd` aquí (o `SIFEN_XSD_DIR` apuntando a otra carpeta). No mezclar con XSD de versiones anteriores.
+- Cierre requerido para emitir/transmitir un DE: `siRecepDE_v150.xsd`, `DE_v150.xsd`, `WS_SiRecepDE_v150.xsd` (+ dependencias).
+- `rde/150/*.xsd` (referenciados por `siRecepRDE*_v150.xsd`, Recibo de Dinero Electronico) responden 404 en el servidor: fuera de alcance.
+- Los `schemaLocation` absolutos `https://ekuatia.set.gov.py/sifen/xsd/...` se resuelven en las pruebas contra esta carpeta (`LocalPackageResolver`).

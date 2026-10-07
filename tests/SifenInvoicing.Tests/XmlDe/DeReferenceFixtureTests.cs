@@ -70,7 +70,7 @@ public sealed class DeReferenceFixtureTests
         Assert.Equal("PYG", V(g, "gOpeCom", "cMoneOpe"));
         Assert.Equal("1", V(g, "gOpeCom", "iTImp"));
         Assert.Equal("1", V(g, "gDatRec", "iNatRec"));
-        Assert.Equal("00000002", V(g, "gDatRec", "dRucRec"));
+        Assert.Equal("80000002", V(g, "gDatRec", "dRucRec"));
     }
 
     [Fact]

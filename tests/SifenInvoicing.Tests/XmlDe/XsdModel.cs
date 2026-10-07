@@ -10,6 +10,11 @@ public static class XsdPackage
     public const string DirVariable = "SIFEN_XSD_DIR";
     public const string DeRoot = "DE_v150.xsd";
     public const string ReceptionRoot = "siRecepDE_v150.xsd";
+    public const string WsReceptionRoot = "WS_SiRecepDE_v150.xsd";
+    public const string OfficialBaseUrl = "https://ekuatia.set.gov.py/sifen/xsd/";
+
+    /// <summary>Raices cuyo cierre de dependencias debe estar completo para emitir y transmitir un DE.</summary>
+    public static readonly string[] RequiredRoots = { ReceptionRoot, DeRoot, WsReceptionRoot };
 
     public static string Dir =>
         Environment.GetEnvironmentVariable(DirVariable) is { Length: > 0 } d
@@ -55,11 +60,37 @@ public static class XsdPackage
 
     public static XmlSchemaSet Load(string rootFile, List<string>? problems = null)
     {
-        var set = new XmlSchemaSet { XmlResolver = new XmlUrlResolver() };
+        var set = new XmlSchemaSet { XmlResolver = new LocalPackageResolver(Dir) };
         set.ValidationEventHandler += (_, e) => problems?.Add(e.Message);
         set.Add(null, Path.Combine(Dir, rootFile));
         set.Compile();
         return set;
+    }
+}
+
+/// <summary>
+/// Resuelve los schemaLocation absolutos del paquete oficial (https://ekuatia.set.gov.py/sifen/xsd/...) contra la
+/// copia local descargada. Nunca sale a la red: cualquier otra URL remota falla para no ocultar un faltante.
+/// </summary>
+public sealed class LocalPackageResolver : XmlUrlResolver
+{
+    private readonly string _dir;
+    public LocalPackageResolver(string dir) => _dir = Path.GetFullPath(dir);
+
+    public override Uri ResolveUri(Uri? baseUri, string? relativeUri)
+    {
+        if (relativeUri is not null && relativeUri.StartsWith(XsdPackage.OfficialBaseUrl, StringComparison.OrdinalIgnoreCase))
+        {
+            return new Uri(Path.Combine(_dir, relativeUri[XsdPackage.OfficialBaseUrl.Length..]));
+        }
+
+        return base.ResolveUri(baseUri, relativeUri);
+    }
+
+    public override object? GetEntity(Uri absoluteUri, string? role, Type? ofObjectToReturn)
+    {
+        if (!absoluteUri.IsFile) throw new XmlException($"Referencia remota no disponible en el paquete local: {absoluteUri}");
+        return base.GetEntity(absoluteUri, role, ofObjectToReturn);
     }
 }
 

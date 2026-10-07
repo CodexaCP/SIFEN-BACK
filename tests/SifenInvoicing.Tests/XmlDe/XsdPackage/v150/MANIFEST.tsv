@@ -1,0 +1,26 @@
+file	url	bytes	sha256	downloaded_utc	referenced_by
+DE_Ekuatiai_v150.xsd	https://ekuatia.set.gov.py/sifen/xsd/DE_Ekuatiai_v150.xsd	79393	2621391346bf36e19e96569144fca487dba26935afa7395739f3318ee195d525	2026-10-07T18:15:11Z	(raiz solicitada)
+DE_Types_v150.xsd	https://ekuatia.set.gov.py/sifen/xsd/DE_Types_v150.xsd	66452	99c5c2ca69eaf56781f8dd4bf6ce779e116ee807293e7eac15d1832634d29150	2026-10-07T18:15:13Z	(raiz solicitada)
+DE_v150.xsd	https://ekuatia.set.gov.py/sifen/xsd/DE_v150.xsd	66190	83435e6aa50c36956e14ca3447a76c5eb551b26c75380b0314037f4b27561cb0	2026-10-07T18:15:14Z	(raiz solicitada)
+Evento_Types_v150.xsd	https://ekuatia.set.gov.py/sifen/xsd/Evento_Types_v150.xsd	23320	0402d380cdea0b80205af95902c4b1a3f9117778c067161e86b48ced3e09dc04	2026-10-07T18:15:16Z	(raiz solicitada)
+Evento_v150.xsd	https://ekuatia.set.gov.py/sifen/xsd/Evento_v150.xsd	23255	30321c18269bbf126bf54637738ad62d8e65887311027ae4c7d6026482983cfe	2026-10-07T18:15:17Z	(raiz solicitada)
+Monedas_v150.xsd	https://ekuatia.set.gov.py/sifen/xsd/Monedas_v150.xsd	57236	16520dd42b5a6e463cb9fb84c74b0a5c9c7ca8542c813636bb390accc7ccdd72	2026-10-07T18:15:19Z	(raiz solicitada)
+WS_SiRecepDE_v150.xsd	https://ekuatia.set.gov.py/sifen/xsd/WS_SiRecepDE_v150.xsd	2599	4fc96d199902774860a2d9cfe472da860594d7fef1abc517ad8742dca52c5704	2026-10-07T18:15:20Z	(raiz solicitada)
+WS_SiRecepEvento_v150.xsd	https://ekuatia.set.gov.py/sifen/xsd/WS_SiRecepEvento_v150.xsd	2618	0d7b804be6743401907c974e020573f2c9f772d0bb3b4c03001ff05f965fa295	2026-10-07T18:15:21Z	(raiz solicitada)
+protProcesDE_v150.xsd	https://ekuatia.set.gov.py/sifen/xsd/protProcesDE_v150.xsd	4206	86868979b97d9de812ee72a2c0ab60a375f1c144e4b5dda8587083cd55f14911	2026-10-07T18:15:22Z	(raiz solicitada)
+siRecepDE_Ekuatiai_v150.xsd	https://ekuatia.set.gov.py/sifen/xsd/siRecepDE_Ekuatiai_v150.xsd	366	7a11a4d74c9e77fc09285df2f5c4488db981dcc22261aadc840cd02b52169546	2026-10-07T18:15:23Z	(raiz solicitada)
+siRecepDE_v150.xsd	https://ekuatia.set.gov.py/sifen/xsd/siRecepDE_v150.xsd	395	c4f566981645ca42afa3c98cedb85be3da4d3520051ab9c253a0f9deae99372f	2026-10-07T18:15:24Z	(raiz solicitada)
+siRecepEventoEmisor_v150.xsd	https://ekuatia.set.gov.py/sifen/xsd/siRecepEventoEmisor_v150.xsd	410	1d820729a05c69c8da4615f3012e725b83157b564432dfb159740ceff669c286	2026-10-07T18:15:25Z	(raiz solicitada)
+siRecepEventoReceptor_v150.xsd	https://ekuatia.set.gov.py/sifen/xsd/siRecepEventoReceptor_v150.xsd	412	20c50f8b17c8959f0014d1104eba92557fcac5d492c8791ebc9b1eea2f6f2f8b	2026-10-07T18:15:27Z	(raiz solicitada)
+siRecepEventoSet_v150.xsd	https://ekuatia.set.gov.py/sifen/xsd/siRecepEventoSet_v150.xsd	410	f3e1e676815ec2a66a581dfe72121485a5d466e8ae3e4d41bd5ea9ce831263e7	2026-10-07T18:15:28Z	(raiz solicitada)
+siRecepEvento_v150.xsd	https://ekuatia.set.gov.py/sifen/xsd/siRecepEvento_v150.xsd	417	27cb5b1438894427c92c276c18883c6df3472de3a4ce78caf9fb7f1838d54473	2026-10-07T18:15:29Z	(raiz solicitada)
+siRecepRDE_Ekuatiai_v150.xsd	https://ekuatia.set.gov.py/sifen/xsd/siRecepRDE_Ekuatiai_v150.xsd	524	57d3998ebd36e938fd80933c20e0a9da548f0521e0088d14443452f7e9ed5a44	2026-10-07T18:15:30Z	(raiz solicitada)
+siRecepRDE_v150.xsd	https://ekuatia.set.gov.py/sifen/xsd/siRecepRDE_v150.xsd	368	d65077bb656eddbb1ccce71a6bb5b334c01fc85765dc94c6934940d827de5d7b	2026-10-07T18:15:31Z	(raiz solicitada)
+xmldsig-core-schema.xsd	https://ekuatia.set.gov.py/sifen/xsd/xmldsig-core-schema.xsd	10339	f2c353a1238799c8cb2e996c9a4bb0ed9dba07a85e41c69f57e263d4b068dee6	2026-10-07T18:15:32Z	DE_Ekuatiai_v150.xsd
+Paises_v100.xsd	https://ekuatia.set.gov.py/sifen/xsd/Paises_v100.xsd	53266	b75edd6b8ee0a10115104b7f0a5f6963485e41d3b78bcb5ef715a0763ecdc592	2026-10-07T18:15:34Z	DE_Ekuatiai_v150.xsd
+Departamentos_v141.xsd	https://ekuatia.set.gov.py/sifen/xsd/Departamentos_v141.xsd	6198	1de13902a775dce85e124e814f1777dc24ab6f80903b23d3ffe05cdfce16351c	2026-10-07T18:15:35Z	DE_Ekuatiai_v150.xsd
+Unidades_Medida_v141.xsd	https://ekuatia.set.gov.py/sifen/xsd/Unidades_Medida_v141.xsd	27240	8a25e5e5decc0540cfdf6adc9fa43a3599ff1e6e5ecbb33e24a202cdf872b9fd	2026-10-07T18:15:36Z	DE_Ekuatiai_v150.xsd
+protProcesEventos_v141.xsd	https://ekuatia.set.gov.py/sifen/xsd/protProcesEventos_v141.xsd	3660	10cef18a54bb6fc65495eea8222f759b08ac00a7533729f61f1647db8b83134d	2026-10-07T18:15:37Z	WS_SiRecepEvento_v150.xsd
+SIFEN_Types_v141.xsd	https://ekuatia.set.gov.py/sifen/xsd/SIFEN_Types_v141.xsd	1040	b8e6d2c5b2ffd0972f123e7973f815cf11627ad8a0aba50bab42a385915e137a	2026-10-07T18:15:38Z	protProcesDE_v150.xsd
+rde/150/RDE_Ekuatiai_Group.xsd	https://ekuatia.set.gov.py/sifen/xsd/rde/150/RDE_Ekuatiai_Group.xsd	NO_DESCARGADO	-	-	siRecepRDE_Ekuatiai_v150.xsd
+rde/150/RDE_Group.xsd	https://ekuatia.set.gov.py/sifen/xsd/rde/150/RDE_Group.xsd	NO_DESCARGADO	-	-	siRecepRDE_v150.xsd

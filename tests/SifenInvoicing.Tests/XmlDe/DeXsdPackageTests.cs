@@ -31,9 +31,19 @@ public sealed class DeXsdPackageTests
 
     private static List<string> Validate(XDocument doc)
     {
-        var set = XsdPackage.Load(XsdPackage.DeRoot);
+        var set = XsdPackage.Load(XsdPackage.ReceptionRoot);
+        // Advertencias = errores: sin ReportValidationWarnings un elemento sin declaracion (p. ej. namespace incorrecto) se
+        // omite en silencio y el documento "valida" vacio (comprobado en Fase 4.1).
         var errors = new List<string>();
-        doc.Validate(set, (_, e) => errors.Add(e.Message));
+        var settings = new System.Xml.XmlReaderSettings
+        {
+            ValidationType = System.Xml.ValidationType.Schema,
+            Schemas = set,
+            ValidationFlags = XmlSchemaValidationFlags.ReportValidationWarnings,
+        };
+        settings.ValidationEventHandler += (_, e) => errors.Add($"{e.Severity}: {e.Message}");
+        using var reader = System.Xml.XmlReader.Create(new StringReader(doc.ToString(SaveOptions.DisableFormatting)), settings);
+        while (reader.Read()) { }
         return errors;
     }
 
@@ -42,7 +52,7 @@ public sealed class DeXsdPackageTests
     [XsdPackageFact(XsdPackage.ReceptionRoot)]
     public void Package_AllImportsAndIncludes_Resolve_ForReceptionAndDe()
     {
-        foreach (var root in new[] { XsdPackage.ReceptionRoot, XsdPackage.DeRoot })
+        foreach (var root in XsdPackage.RequiredRoots)
         {
             var closure = XsdPackage.Closure(XsdPackage.Dir, root);
             foreach (var c in closure) _out.WriteLine($"{root}: {c.File} <- {c.By ?? "(raiz)"} {(c.Exists ? "OK" : "FALTA")}");
@@ -55,10 +65,20 @@ public sealed class DeXsdPackageTests
     {
         var manifest = Path.Combine(XsdPackage.Dir, "MANIFEST.tsv");
         Assert.True(File.Exists(manifest), "Falta MANIFEST.tsv (lo genera tools/sifen-xsd/fetch-xsd.sh).");
+        var required = XsdPackage.RequiredRoots.SelectMany(r => XsdPackage.Closure(XsdPackage.Dir, r)).Select(c => c.File)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var line in File.ReadLines(manifest).Skip(1).Where(l => l.Length > 0))
         {
             var cols = line.Split('\t');
-            Assert.NotEqual("NO_DESCARGADO", cols[2]);
+            if (cols[2] == "NO_DESCARGADO")
+            {
+                // Solo se tolera un faltante publicado como tal por DNIT fuera del cierre requerido (p. ej. rde/150/*.xsd
+                // de siRecepRDE_v150.xsd, 404 en el servidor oficial). Queda documentado en el manifiesto.
+                _out.WriteLine($"NO_DESCARGADO (fuera del cierre requerido): {cols[0]} <- {cols[5]}");
+                Assert.DoesNotContain(cols[0], required);
+                continue;
+            }
+
             var path = Path.Combine(XsdPackage.Dir, cols[0]);
             Assert.Equal(cols[3], Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant());
             Assert.Equal(long.Parse(cols[2]), new FileInfo(path).Length);
@@ -69,7 +89,7 @@ public sealed class DeXsdPackageTests
     public void Schema_LoadsCompiled_NamespaceAndRoot()
     {
         var problems = new List<string>();
-        var set = XsdPackage.Load(XsdPackage.DeRoot, problems);
+        var set = XsdPackage.Load(XsdPackage.ReceptionRoot, problems);
         Assert.Empty(problems);
         Assert.Contains(set.Schemas().Cast<XmlSchema>(), s => s.TargetNamespace == DeReferenceStructure.Namespace);
         Assert.True(set.GlobalElements.Contains(new System.Xml.XmlQualifiedName("rDE", DeReferenceStructure.Namespace)));
@@ -80,7 +100,7 @@ public sealed class DeXsdPackageTests
     [XsdPackageFact]
     public void Xsd_RootChildren_DVerFor_DE_Signature_GCamFuFD_InOrder()
     {
-        var kids = XsdModel.Children(XsdModel.FindElement(XsdPackage.Load(XsdPackage.DeRoot), "rDE")!);
+        var kids = XsdModel.Children(XsdModel.FindElement(XsdPackage.Load(XsdPackage.ReceptionRoot), "rDE")!);
         foreach (var k in kids) _out.WriteLine($"rDE/{k.Name} {k.Min}..{k.Max} choice={k.InChoice}");
         Assert.Equal(DeReferenceStructure.Order["rDE"], kids.Select(k => k.Name).ToArray());
     }
@@ -88,7 +108,7 @@ public sealed class DeXsdPackageTests
     [XsdPackageFact]
     public void Xsd_ChildOrder_MatchesReference_ForAllCoveredGroups()
     {
-        var set = XsdPackage.Load(XsdPackage.DeRoot);
+        var set = XsdPackage.Load(XsdPackage.ReceptionRoot);
         var diffs = new List<string>();
         foreach (var (group, reference) in DeReferenceStructure.Order)
         {
@@ -108,7 +128,7 @@ public sealed class DeXsdPackageTests
     [XsdPackageFact]
     public void Xsd_MandatoryElementsOfReference_AreMinOccursAtLeastOne()
     {
-        var set = XsdPackage.Load(XsdPackage.DeRoot);
+        var set = XsdPackage.Load(XsdPackage.ReceptionRoot);
         var bad = new List<string>();
         foreach (var (group, required) in DeReferenceStructure.Required)
         {
@@ -124,10 +144,41 @@ public sealed class DeXsdPackageTests
     }
 
     [XsdPackageFact]
+    public void Xsd_ConditionallyRequiredGroups_AreOptionalInXsd_AndMustBeEnforcedByBuilder()
+    {
+        var set = XsdPackage.Load(XsdPackage.ReceptionRoot);
+        foreach (var (path, rule) in DeReferenceStructure.RequiredForDe01ButOptionalInXsd)
+        {
+            var parts = path.Split('/');
+            var k = XsdModel.Children(XsdModel.FindElement(set, parts[0])!).Single(c => c.Name == parts[1]);
+            _out.WriteLine($"{path}: XSD {k.Min}..{k.Max}; {rule}");
+            Assert.Equal(0m, k.Min);
+        }
+    }
+
+    [XsdPackageFact]
+    public void Xsd_GTimb_DoesNotDeclareDFeFinT_AndKeyCardinalitiesAreConfirmed()
+    {
+        // Cierra F-5 de Fase 4.0: el Manual (C009) lista dFeFinT 1-1, pero el XSD publicado no lo declara.
+        var set = XsdPackage.Load(XsdPackage.ReceptionRoot);
+        Card Of(string parent, string child) =>
+            XsdModel.Children(XsdModel.FindElement(set, parent)!).Where(c => c.Name == child).Select(c => new Card(c.Min, c.Max)).SingleOrDefault();
+        Assert.Null(Of("gTimb", "dFeFinT"));
+        Assert.Equal(new Card(1, 1), Of("gCamIVA", "dBasExe"));
+        Assert.Equal(new Card(1, 1), Of("gCamIVA", "dBasGravIVA"));
+        Assert.Equal(new Card(0, 999), Of("gCamCond", "gPaConEIni"));
+        Assert.Equal(new Card(1, 999), Of("gDtipDE", "gCamItem"));
+        Assert.Equal(new Card(1, 1), Of("gTotSub", "dTotGralOpe"));
+        Assert.Equal(new Card(0, 1), Of("gTotSub", "dTotalGs"));
+    }
+
+    private sealed record Card(decimal Min, decimal Max);
+
+    [XsdPackageFact]
     public void Xsd_DocumentsCardinalityAndTypeOfKeyElements()
     {
         // No afirma valores: registra lo que dice el XSD para cerrar los PENDIENTE (dFeFinT, dBasExe, gPaConEIni, ...).
-        var set = XsdPackage.Load(XsdPackage.DeRoot);
+        var set = XsdPackage.Load(XsdPackage.ReceptionRoot);
         foreach (var (parent, child) in new[]
         {
             ("gTimb", "dFeFinT"), ("gTimb", "dFeIniT"), ("gTimb", "dSerieNum"), ("gCamIVA", "dBasExe"), ("gCamIVA", "dBasGravIVA"),
@@ -146,7 +197,7 @@ public sealed class DeXsdPackageTests
     [XsdPackageFact]
     public void Xsd_DocumentsFacetsOfKeyElements()
     {
-        var set = XsdPackage.Load(XsdPackage.DeRoot);
+        var set = XsdPackage.Load(XsdPackage.ReceptionRoot);
         foreach (var name in new[] { "dVerFor", "dDVId", "dNumTim", "dEst", "dPunExp", "dNumDoc", "dCodSeg", "iTiDE", "cMoneOpe", "dTasaIVA", "dCantProSer", "dDesProSer", "dCodInt", "dFecFirma", "dCarQR" })
         {
             var el = XsdModel.FindElement(set, name);
@@ -159,61 +210,96 @@ public sealed class DeXsdPackageTests
     // ---------- validacion de documentos ----------
 
     [XsdPackageFact]
-    public void Validation_MinimalFixture_WithPlaceholderSignature_IsEvaluated()
+    public void Validation_MinimalFixture_OnlyFailsOnDSisFact_ContradictionNt10VsXsd()
     {
+        // Fixture DE01 (sin dSisFact, por NT-10). El XSD publicado exige dSisFact: ese debe ser el UNICO error.
         var errors = Validate(DeFixtures.MinimalDe01WithPlaceholderSignature());
+        errors.ForEach(e => _out.WriteLine("XSD: " + e));
+        var single = Assert.Single(errors);
+        Assert.Contains("dSisFact", single);
+    }
+
+    [XsdPackageFact]
+    public void Validation_MinimalFixture_WithPublishedXsdDSisFact_IsValid()
+    {
+        // Misma forma + dSisFact=1 (variante XSD publicado): valida sin errores. No decide que se emita dSisFact.
+        var errors = Validate(DeFixtures.WithPublishedXsdDSisFact(DeFixtures.MinimalDe01WithPlaceholderSignature()));
         errors.ForEach(e => _out.WriteLine("XSD: " + e));
         Assert.Empty(errors);
     }
 
     [XsdPackageFact]
+    public void Xsd_DSisFact_IsDeclaredMandatory_InPublishedDeV150()
+    {
+        // Contradiccion documentada: NT-10 (04/02/2022, p.62) elimina A005 dSisFact; DE_v150.xsd lo declara 1..1, max 1.
+        // Si DNIT republica el XSD sin dSisFact, esta prueba falla y la contradiccion se cierra.
+        var set = XsdPackage.Load(XsdPackage.ReceptionRoot);
+        var k = XsdModel.Children(XsdModel.FindElement(set, "DE")!).Single(c => c.Name == "dSisFact");
+        Assert.Equal(1m, k.Min);
+        Assert.Equal(1m, k.Max);
+        Assert.Equal(new List<string> { "1" }, XsdModel.Facets(XsdModel.FindElement(set, "dSisFact")!)["MaxInclusiveFacet"]);
+    }
+
+    [XsdPackageFact]
     public void Validation_OfficialSample_ResultIsDocumented()
     {
-        // La muestra es anterior a NT-10/13: se espera discrepancia (dSisFact, falta dBasExe). No se "arregla" la muestra.
+        // La muestra es anterior a NT-13: se espera discrepancia (falta dBasExe, RUC 0000000x fuera de patron, certificado de
+        // relleno). No se "arregla" la muestra.
         var errors = Validate(XDocument.Load(DeFixtures.SamplePath));
         errors.ForEach(e => _out.WriteLine("XSD(muestra): " + e));
-        Assert.True(true);
+        Assert.Contains(errors, e => e.Contains("dBasExe"));
+        Assert.Contains(errors, e => e.Contains("dRucEm"));
+        Assert.DoesNotContain(errors, e => e.Contains("dSisFact"));
     }
 
     [XsdPackageFact]
     public void Negative_UnsignedFixture_IsRejected()
     {
-        Assert.NotEmpty(Validate(DeFixtures.MinimalDe01()));
+        Assert.NotEmpty(Validate(DeFixtures.WithPublishedXsdDSisFact(DeFixtures.MinimalDe01())));
     }
 
     [XsdPackageFact]
     public void Negative_OutOfOrder_UnknownElement_MissingMandatory_WrongType_OutOfRestriction_WrongNamespace()
     {
-        XDocument Fresh() => DeFixtures.MinimalDe01WithPlaceholderSignature();
+        XDocument Fresh() => DeFixtures.WithPublishedXsdDSisFact(DeFixtures.MinimalDe01WithPlaceholderSignature());
         XElement De(XDocument d) => d.Root!.Element(Ns + "DE")!;
+        void Rejected(string caso, XDocument d, string expected)
+        {
+            var errors = Validate(d);
+            errors.ForEach(e => _out.WriteLine($"{caso}: {e}"));
+            Assert.Contains(errors, e => e.Contains(expected, StringComparison.Ordinal));
+        }
+
+        Assert.Empty(Validate(Fresh()));
 
         var outOfOrder = Fresh();
         var gTimb = De(outOfOrder).Element(Ns + "gTimb")!;
         var est = gTimb.Element(Ns + "dEst")!; est.Remove(); gTimb.Element(Ns + "dNumDoc")!.AddAfterSelf(est);
-        Assert.NotEmpty(Validate(outOfOrder));
+        Rejected("fuera de orden", outOfOrder, "dPunExp");
 
         var unknown = Fresh();
         De(unknown).Element(Ns + "gOpeDE")!.Add(new XElement(Ns + "dElementoInventado", "x"));
-        Assert.NotEmpty(Validate(unknown));
+        Rejected("desconocido", unknown, "dElementoInventado");
 
         var missing = Fresh();
         De(missing).Descendants(Ns + "dBasExe").First().Remove();
-        Assert.NotEmpty(Validate(missing));
+        Rejected("obligatorio ausente", missing, "dBasExe");
 
         var wrongType = Fresh();
         De(wrongType).Element(Ns + "gTimb")!.Element(Ns + "dNumTim")!.Value = "ABC";
-        Assert.NotEmpty(Validate(wrongType));
+        Rejected("tipo", wrongType, "dNumTim");
 
         var outOfRestriction = Fresh();
         De(outOfRestriction).Element(Ns + "gTimb")!.Element(Ns + "dEst")!.Value = "12345";
-        Assert.NotEmpty(Validate(outOfRestriction));
+        Rejected("restriccion", outOfRestriction, "dEst");
 
-        var removedByNt = Fresh();
-        De(removedByNt).Element(Ns + "dFecFirma")!.AddAfterSelf(new XElement(Ns + "dSisFact", "1"));
-        Assert.NotEmpty(Validate(removedByNt));
+        var badStructure = Fresh();
+        var sig = badStructure.Root!.Element(XName.Get("Signature", DeReferenceStructure.DsigNamespace))!;
+        sig.Remove(); De(badStructure).Add(sig);
+        Rejected("estructura (Signature dentro de DE)", badStructure, "Signature");
 
-        var wrongNs = XDocument.Parse(DeFixtures.MinimalDe01Xml().Replace(DeReferenceStructure.Namespace + "\"", "http://ekuatia.set.gov.py/sifen/otro\"", StringComparison.Ordinal));
-        Assert.NotEmpty(Validate(wrongNs));
+        var wrongNs = XDocument.Parse(Fresh().ToString().Replace(DeReferenceStructure.Namespace + "\"", "http://ekuatia.set.gov.py/sifen/otro\"", StringComparison.Ordinal));
+        Rejected("namespace", wrongNs, "rDE");
     }
 
     // ---------- firma / QR segun XSD ----------
@@ -221,9 +307,9 @@ public sealed class DeXsdPackageTests
     [XsdPackageFact]
     public void Signature_AndGCamFuFD_ArePeersOfDE_InsideRDE()
     {
-        var kids = XsdModel.Children(XsdModel.FindElement(XsdPackage.Load(XsdPackage.DeRoot), "rDE")!).Select(k => k.Name).ToList();
+        var kids = XsdModel.Children(XsdModel.FindElement(XsdPackage.Load(XsdPackage.ReceptionRoot), "rDE")!).Select(k => k.Name).ToList();
         Assert.True(kids.IndexOf("DE") < kids.IndexOf("Signature") && kids.IndexOf("Signature") < kids.IndexOf("gCamFuFD"));
-        var fufd = XsdModel.Children(XsdModel.FindElement(XsdPackage.Load(XsdPackage.DeRoot), "gCamFuFD")!);
+        var fufd = XsdModel.Children(XsdModel.FindElement(XsdPackage.Load(XsdPackage.ReceptionRoot), "gCamFuFD")!);
         Assert.Contains(fufd, c => c.Name == "dCarQR");
     }
 
@@ -231,7 +317,7 @@ public sealed class DeXsdPackageTests
     public void Signature_XmlDsigSchema_AcceptsOnlyDeclaredAlgorithmsStructure_Documented()
     {
         // Documenta (no asume) si el XSD limita Algorithm/URI de CanonicalizationMethod, SignatureMethod, Transform.
-        var set = XsdPackage.Load(XsdPackage.DeRoot);
+        var set = XsdPackage.Load(XsdPackage.ReceptionRoot);
         foreach (var name in new[] { "CanonicalizationMethod", "SignatureMethod", "Transform", "DigestMethod", "Reference" })
         {
             var el = XsdModel.FindElement(set, name);
@@ -251,7 +337,7 @@ public sealed class WsXsdPackageTests
     public void Reception_Loads_AndDocumentsRequestResponseStructure()
     {
         var problems = new List<string>();
-        var set = XsdPackage.Load(XsdPackage.ReceptionRoot, problems);
+        var set = XsdPackage.Load(XsdPackage.WsReceptionRoot, problems);
         Assert.Empty(problems);
         foreach (var name in new[] { "rEnviDe", "rRetEnviDe", "rProtDe", "gResProc", "xDE", "dId" })
         {

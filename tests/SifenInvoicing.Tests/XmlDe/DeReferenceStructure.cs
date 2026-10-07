@@ -3,7 +3,8 @@ namespace SifenInvoicing.Tests.XmlDe;
 /// <summary>
 /// FASE 4.0 - Especificacion de referencia del DE tipo 01 (solo para pruebas; NO es codigo de produccion).
 /// Orden y cardinalidad: Manual Tecnico v150 (tablas) + muestra oficial "Estructura xml_DE" + NT-10/13/16.
-/// PENDIENTE DE XSD: el orden aqui es el de la muestra oficial; debe confirmarse contra DE_v150.xsd (no disponible).
+/// Fase 4.1: orden CONFIRMADO contra DE_v150.xsd (DeXsdPackageTests). Unica diferencia: el XSD publicado declara dSisFact
+/// (1..1) entre dFecFirma y gOpeDE; aqui se omite por NT-10 (contradiccion documentada, PENDIENTE DE PRUEBA SIFEN).
 /// Cubre solo los grupos del DE01 minimo (Test, PYG, IVA 10%, 2 items, receptor simple, contado).
 /// </summary>
 public static class DeReferenceStructure
@@ -64,10 +65,10 @@ public static class DeReferenceStructure
     public static readonly IReadOnlyDictionary<string, string[]> Required = new Dictionary<string, string[]>
     {
         ["rDE"] = new[] { "dVerFor", "DE", "Signature", "gCamFuFD" },
-        ["DE"] = new[] { "dDVId", "dFecFirma", "gOpeDE", "gTimb", "gDatGralOpe", "gDtipDE", "gTotSub" },
+        ["DE"] = new[] { "dDVId", "dFecFirma", "gOpeDE", "gTimb", "gDatGralOpe", "gDtipDE" },
         ["gOpeDE"] = new[] { "iTipEmi", "dDesTipEmi", "dCodSeg" },
         ["gTimb"] = new[] { "iTiDE", "dDesTiDE", "dNumTim", "dEst", "dPunExp", "dNumDoc", "dFeIniT" },
-        ["gDatGralOpe"] = new[] { "dFeEmiDE", "gOpeCom", "gEmis", "gDatRec" },
+        ["gDatGralOpe"] = new[] { "dFeEmiDE", "gEmis", "gDatRec" },
         ["gOpeCom"] = new[] { "iTImp", "cMoneOpe", "dDesMoneOpe" },
         ["gCamIVA"] = new[] { "iAfecIVA", "dDesAfecIVA", "dPropIVA", "dTasaIVA", "dBasGravIVA", "dLiqIVAItem", "dBasExe" },
         ["gCamCond"] = new[] { "iCondOpe", "dDCondOpe" },   // gPaConEIni: obligatorio si iCondOpe = 1 (condicional, ver test)
@@ -79,6 +80,21 @@ public static class DeReferenceStructure
             "dTotOpe", "dTotDesc", "dTotDescGlotem", "dTotAntItem", "dTotAnt", "dPorcDescTotal", "dDescTotal",
             "dAnticipo", "dRedon", "dTotGralOpe",
         },
+    };
+
+    /// <summary>
+    /// Obligatorios del DE01 que el XSD v150 declara 0..1 porque su obligatoriedad es condicional (Manual): el XSD no la
+    /// verifica; la debe garantizar el builder (Fase 4.2). Confirmado por XSD (Fase 4.1).
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> RequiredForDe01ButOptionalInXsd = new Dictionary<string, string>
+    {
+        ["DE/gTotSub"] = "Manual F001: Obligatorio si C002 != 7",
+        ["gDatGralOpe/gOpeCom"] = "Manual D010: Obligatorio si C002 != 7",
+        ["gDtipDE/gCamFE"] = "Manual E010: Obligatorio si C002 = 1",
+        ["gDtipDE/gCamCond"] = "Manual E600: Obligatorio si C002 = 1 o 4",
+        ["gCamCond/gPaConEIni"] = "Manual E605: Obligatorio si E601 = 1 (XSD 0..999)",
+        ["gCamItem/gValorItem"] = "Manual E720: Obligatorio si C002 != 7",
+        ["gCamItem/gCamIVA"] = "Manual E730: Obligatorio si D013 = 1, 3, 4 o 5 y C002 != 4 o 7",
     };
 
     /// <summary>Elementos retirados por NT (no deben emitirse en el DE01 v150).</summary>
