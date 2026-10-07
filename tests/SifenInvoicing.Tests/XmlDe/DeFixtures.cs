@@ -24,15 +24,18 @@ public static class DeFixtures
     /// Forma firmada con valores de relleno (base64 ficticio): sirve SOLO para validar estructura contra el XSD.
     /// No es una firma real ni un QR real.
     /// </summary>
-    public static XDocument MinimalDe01WithPlaceholderSignature()
+    public static XDocument MinimalDe01WithPlaceholderSignature() => AttachPlaceholderSignature(MinimalDe01());
+
+    /// <summary>Agrega Signature (relleno) y gCamFuFD (QR ficticio) como hermanos de DE. Solo para validar estructura.</summary>
+    public static XDocument AttachPlaceholderSignature(XDocument doc)
     {
-        var doc = MinimalDe01();
         XNamespace ds = DeReferenceStructure.DsigNamespace;
+        var cdc = doc.Root!.Element(Ns + "DE")!.Attribute("Id")!.Value;
         var sig = new XElement(ds + "Signature",
             new XElement(ds + "SignedInfo",
                 new XElement(ds + "CanonicalizationMethod", new XAttribute("Algorithm", "http://www.w3.org/2001/10/xml-exc-c14n#")),
                 new XElement(ds + "SignatureMethod", new XAttribute("Algorithm", "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256")),
-                new XElement(ds + "Reference", new XAttribute("URI", "#" + Cdc),
+                new XElement(ds + "Reference", new XAttribute("URI", "#" + cdc),
                     new XElement(ds + "Transforms", new XElement(ds + "Transform", new XAttribute("Algorithm", "http://www.w3.org/2000/09/xmldsig#enveloped-signature"))),
                     new XElement(ds + "DigestMethod", new XAttribute("Algorithm", "http://www.w3.org/2001/04/xmlenc#sha256")),
                     new XElement(ds + "DigestValue", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="))),

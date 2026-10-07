@@ -58,6 +58,26 @@ public static class XsdPackage
         return result;
     }
 
+    /// <summary>
+    /// Valida un documento contra siRecepDE_v150.xsd con advertencias = errores: sin ReportValidationWarnings un elemento sin
+    /// declaracion (p. ej. namespace incorrecto) se omite en silencio y el documento "valida" vacio (comprobado en Fase 4.1).
+    /// </summary>
+    public static List<string> ValidateDe(XDocument doc)
+    {
+        var set = Load(ReceptionRoot);
+        var errors = new List<string>();
+        var settings = new XmlReaderSettings
+        {
+            ValidationType = ValidationType.Schema,
+            Schemas = set,
+            ValidationFlags = XmlSchemaValidationFlags.ReportValidationWarnings,
+        };
+        settings.ValidationEventHandler += (_, e) => errors.Add($"{e.Severity}: {e.Message}");
+        using var reader = XmlReader.Create(new StringReader(doc.ToString(SaveOptions.DisableFormatting)), settings);
+        while (reader.Read()) { }
+        return errors;
+    }
+
     public static XmlSchemaSet Load(string rootFile, List<string>? problems = null)
     {
         var set = new XmlSchemaSet { XmlResolver = new LocalPackageResolver(Dir) };

@@ -83,6 +83,21 @@ public static class CdcGenerator
             throw new DomainException("CDC base must contain exactly 43 numeric digits.");
         }
 
+        return CalculateModulo11(baseCdc);
+    }
+
+    /// <summary>
+    /// Modulo 11 del Manual v150 (pesos 2..11 ciclicos de derecha a izquierda), compartido por el DV del CDC y el DV del RUC
+    /// (D102/D207 "Segun algoritmo modulo 11"). Fase 4.2: reutilizado sin cambios para validar el DV del RUC.
+    /// </summary>
+    public static int CalculateModulo11(string digits)
+    {
+        if (string.IsNullOrEmpty(digits) || !IsNumeric(digits))
+        {
+            throw new DomainException("Modulo 11 input must contain only numeric digits.");
+        }
+
+        var baseCdc = digits;
         var sum = 0;
 
         for (int i = baseCdc.Length - 1, weight = 2; i >= 0; i--, weight = weight == MaxWeight ? 2 : weight + 1)

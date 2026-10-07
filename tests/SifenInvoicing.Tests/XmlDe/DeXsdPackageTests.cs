@@ -29,23 +29,7 @@ public sealed class DeXsdPackageTests
 
     private static readonly XNamespace Ns = DeReferenceStructure.Namespace;
 
-    private static List<string> Validate(XDocument doc)
-    {
-        var set = XsdPackage.Load(XsdPackage.ReceptionRoot);
-        // Advertencias = errores: sin ReportValidationWarnings un elemento sin declaracion (p. ej. namespace incorrecto) se
-        // omite en silencio y el documento "valida" vacio (comprobado en Fase 4.1).
-        var errors = new List<string>();
-        var settings = new System.Xml.XmlReaderSettings
-        {
-            ValidationType = System.Xml.ValidationType.Schema,
-            Schemas = set,
-            ValidationFlags = XmlSchemaValidationFlags.ReportValidationWarnings,
-        };
-        settings.ValidationEventHandler += (_, e) => errors.Add($"{e.Severity}: {e.Message}");
-        using var reader = System.Xml.XmlReader.Create(new StringReader(doc.ToString(SaveOptions.DisableFormatting)), settings);
-        while (reader.Read()) { }
-        return errors;
-    }
+    private static List<string> Validate(XDocument doc) => XsdPackage.ValidateDe(doc);
 
     // ---------- paquete ----------
 
