@@ -43,6 +43,9 @@ public sealed class SifenDocumentLineConfiguration : IEntityTypeConfiguration<Si
             .HasColumnType("decimal(18,2)")
             .IsRequired();
 
+        builder.Property(entity => entity.ProductCode).HasMaxLength(50);
+        builder.Property(entity => entity.UnitDescription).HasMaxLength(10);
+
         builder.HasIndex(entity => new { entity.DocumentId, entity.LineNumber })
             .IsUnique();
 

@@ -166,7 +166,7 @@ public sealed class SqlServerFixture : IAsyncLifetime
         var db = NewContext(tenantId, interceptors);
         var accessor = new AsyncLocalTenantContextAccessor();
         var service = new EfInvoiceService(
-            db, accessor, new FacturaXmlGenerator(), new PassThroughValidator(), new InvoiceKudePdfRenderer(),
+            db, accessor, DeTestKit.Builder(), DeTestKit.Xsd(), new InvoiceKudePdfRenderer(),
             new ReadyCertificateValidator(), new FakeSigner(), new StubReadiness(), new CountingGateway(),
             new FakeParser(), SqlServerFakes.Configuration(), new NullAudit(), new SystemClock(),
             numbering ?? new EfNumberingService(db), new TestFiscalClock());
@@ -187,7 +187,7 @@ public sealed class SqlServerFixture : IAsyncLifetime
         }
         else if (taxpayer)
         {
-            db.TaxpayerProfiles.Add(TestFiscalSetup.Taxpayer(tenant.Id));
+            TestFiscalSetup.AddTaxpayer(db, tenant.Id);
         }
 
         db.TenantCertificateMetadata.Add(TenantCertificateMetadata.Create(
@@ -198,8 +198,8 @@ public sealed class SqlServerFixture : IAsyncLifetime
     }
 
     public static CreateInvoiceCommand Command(string key, decimal price = 100000m, string description = "Servicio mensual") =>
-        new(key, null, "Cliente Demo", InvoiceReceiverDocumentType.Ruc, "80099999", null, null, null,
-            InvoiceCurrency.PYG, InvoiceSaleCondition.Cash, [new CreateInvoiceItemCommand(description, 1, price, 10)]);
+        new(key, null, "Cliente Demo", InvoiceReceiverDocumentType.Ci, "1234567", null, null, null,
+            InvoiceCurrency.PYG, InvoiceSaleCondition.Cash, [new CreateInvoiceItemCommand(description, 1, price, 10, "SRV-001", 77)]);
 
     /// <summary>Estado real en SQL Server, leido con un contexto nuevo (sin cache del contexto de la prueba).</summary>
     public async Task<TenantState> ReadStateAsync(Guid tenantId)
@@ -282,15 +282,10 @@ internal static class SqlServerFakes
 {
     public static IConfiguration Configuration() =>
         new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["Sifen:Development:AllowUnsignedInternalValidation"] = "False" })
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Sifen:Development:AllowUnsignedInternalValidation"] = "False", ["Sifen:De:DefaultTransactionType"] = "1", ["Sifen:De:DefaultPresenceIndicator"] = "1" })
             .Build();
 }
 
-internal sealed class PassThroughValidator : IFacturaXmlPreSubmissionValidator
-{
-    public Task ValidateTipoDoc01Async(string xml, string cdc, Guid tenantId, SifenEnvironmentType environment, CancellationToken cancellationToken = default) =>
-        Task.CompletedTask;
-}
 
 internal sealed class ReadyCertificateValidator : ITenantCertificateValidator
 {

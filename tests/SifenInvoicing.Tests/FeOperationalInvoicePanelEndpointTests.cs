@@ -252,8 +252,8 @@ public sealed class FeOperationalInvoicePanelEndpointTests
         var invoiceService = new EfInvoiceService(
             dbContext,
             tenantAccessor,
-            new FacturaXmlGenerator(),
-            new PassThroughFacturaXmlPreSubmissionValidator(),
+            DeTestKit.Builder(),
+            DeTestKit.Xsd(),
             new InvoiceKudePdfRenderer(),
             new ReadyTenantCertificateValidator(),
             new FakeXmlDocumentSigner(),
@@ -320,13 +320,8 @@ public sealed class FeOperationalInvoicePanelEndpointTests
     }
 
     private static IConfiguration CreateConfiguration()
-        => new ConfigurationBuilder().AddInMemoryCollection([]).Build();
+        => new ConfigurationBuilder().AddInMemoryCollection(DeTestKit.DeDefaults).Build();
 
-    private sealed class PassThroughFacturaXmlPreSubmissionValidator : IFacturaXmlPreSubmissionValidator
-    {
-        public Task ValidateTipoDoc01Async(string xml, string cdc, Guid tenantId, SifenEnvironmentType environment, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-    }
 
     private sealed class ReadyTenantCertificateValidator : ITenantCertificateValidator
     {

@@ -467,6 +467,12 @@ public static class InvoiceEndpoints
         public string? SaleCondition { get; init; }
         public InvoiceSaleCondition? LegacySaleCondition { get; init; }
         public SimpleInvoiceCustomerRequest? Customer { get; init; }
+        /// <summary>iTipTra (D011). Si se omite se usa la configuracion Sifen:De:DefaultTransactionType.</summary>
+        public int? TransactionType { get; init; }
+        /// <summary>iIndPres (E011). Si se omite se usa la configuracion Sifen:De:DefaultPresenceIndicator.</summary>
+        public int? PresenceIndicator { get; init; }
+        /// <summary>iTiContRec (D205): 1 = persona fisica, 2 = persona juridica. Obligatorio si el receptor es contribuyente (RUC).</summary>
+        public int? ReceptorTaxpayerKind { get; init; }
         public IReadOnlyCollection<CreateInvoiceItemRequest> Items { get; init; } = [];
     }
 
@@ -477,6 +483,10 @@ public static class InvoiceEndpoints
         public decimal UnitPrice { get; init; }
         public int? VatRate { get; init; }
         public InvoiceVatType? VatType { get; init; }
+        /// <summary>dCodInt (E701).</summary>
+        public string? Code { get; init; }
+        /// <summary>cUniMed (E709), Tabla 5 del Manual v150.</summary>
+        public int? UnitCode { get; init; }
     }
 
     public sealed class CreateSimpleInvoiceRequest : CreateInvoiceRequest
@@ -538,7 +548,10 @@ public static class InvoiceEndpoints
             request.ReceiverPhone,
             ParseCurrency(request.CurrencyCode, request.Currency),
             ParseSaleCondition(request.SaleCondition, request.LegacySaleCondition),
-            request.Items.Select(BuildCreateInvoiceItemCommand).ToArray());
+            request.Items.Select(BuildCreateInvoiceItemCommand).ToArray(),
+            request.TransactionType,
+            request.PresenceIndicator,
+            request.ReceptorTaxpayerKind);
     }
 
     private static CreateInvoiceItemCommand BuildCreateInvoiceItemCommand(CreateInvoiceItemRequest item)
@@ -547,7 +560,9 @@ public static class InvoiceEndpoints
             item.Description ?? string.Empty,
             item.Quantity,
             item.UnitPrice,
-            ResolveVatRate(item));
+            ResolveVatRate(item),
+            item.Code,
+            item.UnitCode);
     }
 
     private static int ResolveVatRate(CreateInvoiceItemRequest item)

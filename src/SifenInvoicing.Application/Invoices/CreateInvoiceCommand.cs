@@ -20,7 +20,10 @@ public sealed record CreateInvoiceCommand(
     string? ReceptorPhone,
     InvoiceCurrency Currency,
     InvoiceSaleCondition SaleCondition,
-    IReadOnlyCollection<CreateInvoiceItemCommand> Items)
+    IReadOnlyCollection<CreateInvoiceItemCommand> Items,
+    int? TransactionType = null,
+    int? PresenceIndicator = null,
+    int? ReceptorTaxpayerKind = null)
 {
     /// <summary>SHA-256 (hex) del contenido comercial normalizado, sin la Idempotency-Key.</summary>
     public string ComputeRequestHash()
@@ -36,12 +39,17 @@ public sealed record CreateInvoiceCommand(
             ReceptorPhone = Normalize(ReceptorPhone),
             Currency,
             SaleCondition,
+            TransactionType,
+            PresenceIndicator,
+            ReceptorTaxpayerKind,
             Items = Items?.Select(item => new
             {
                 Description = Normalize(item.Description),
                 item.Quantity,
                 item.UnitPrice,
-                item.VatRate
+                item.VatRate,
+                Code = Normalize(item.Code),
+                item.UnitCode
             })
         });
 

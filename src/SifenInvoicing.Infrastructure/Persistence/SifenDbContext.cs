@@ -26,6 +26,7 @@ public class SifenDbContext : DbContext
     public DbSet<Tenant> Tenants => Set<Tenant>();
 
     public DbSet<TaxpayerProfile> TaxpayerProfiles => Set<TaxpayerProfile>();
+    public DbSet<TaxpayerEconomicActivity> TaxpayerEconomicActivities => Set<TaxpayerEconomicActivity>();
 
     public DbSet<TenantSifenSettings> TenantSifenSettings => Set<TenantSifenSettings>();
 
@@ -64,6 +65,8 @@ public class SifenDbContext : DbContext
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(SifenDbContext).Assembly);
         modelBuilder.Entity<TaxpayerProfile>().HasQueryFilter(entity =>
+            CurrentTenantGuid != Guid.Empty && entity.TenantId == CurrentTenantGuid);
+        modelBuilder.Entity<TaxpayerEconomicActivity>().HasQueryFilter(entity =>
             CurrentTenantGuid != Guid.Empty && entity.TenantId == CurrentTenantGuid);
         modelBuilder.Entity<TenantSifenSettings>().HasQueryFilter(entity =>
             CurrentTenantGuid != Guid.Empty && entity.TenantId == CurrentTenantGuid);

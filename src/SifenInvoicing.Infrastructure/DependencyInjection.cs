@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SifenInvoicing.Application.Auditing;
@@ -11,6 +11,7 @@ using SifenInvoicing.Application.Platform;
 using SifenInvoicing.Application.Security;
 using SifenInvoicing.Application.Sifen;
 using SifenInvoicing.Application.Tenancy;
+using SifenInvoicing.Application.XmlDe;
 using SifenInvoicing.Application.XmlSigning;
 using SifenInvoicing.Application.XmlValidation;
 using SifenInvoicing.Infrastructure.Auditing;
@@ -63,6 +64,9 @@ public static class DependencyInjection
         services.AddScoped<ISifenResponseParser, DefaultSifenResponseParser>();
         services.AddScoped<IXmlDocumentSigner, SifenXmlDocumentSigner>();
         services.AddScoped<IXmlSchemaValidator, XmlSchemaValidator>();
+        services.AddScoped<ISifenDeXsdValidator, SifenDeXsdValidator>();
+        services.AddSingleton(_ => SifenDeBuilderOptionsFactory.Create(configuration));
+        services.AddSingleton<SifenDeXmlBuilder>();
         services.AddDbContext<SifenDbContext>(options =>
         {
             options.UseSqlServer(configuration.GetConnectionString("DefaultConnection"));

@@ -15,7 +15,11 @@ public sealed record RegisterFiscalProfileCommand(
     string? CityCode,
     string? CityDescription,
     string? Phone,
-    string? Email);
+    string? Email,
+    IReadOnlyList<RegisterEconomicActivity>? EconomicActivities = null);
+
+/// <summary>gActEco (D130-D132): codigo y descripcion de la actividad economica segun la DNIT (Tabla 3, no se inventan).</summary>
+public sealed record RegisterEconomicActivity(string Code, string Description);
 
 public sealed record RegisterFiscalStampCommand(
     Guid TenantId,

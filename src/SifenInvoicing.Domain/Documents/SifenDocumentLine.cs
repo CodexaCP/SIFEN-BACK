@@ -66,6 +66,22 @@ public sealed class SifenDocumentLine : TenantScopedEntity
 
     public decimal TotalAmount { get; private set; }
 
+    /// <summary>dCodInt (E701): codigo interno del producto/servicio, tal como se informo en el DE.</summary>
+    public string? ProductCode { get; private set; }
+
+    /// <summary>cUniMed (E709): codigo de la Tabla 5 del Manual v150.</summary>
+    public int? UnitCode { get; private set; }
+
+    /// <summary>dDesUniMed (E710): representacion de la Tabla 5 del Manual v150 (p. ej. UNI).</summary>
+    public string? UnitDescription { get; private set; }
+
+    public void SetCatalogData(string productCode, int unitCode, string unitDescription)
+    {
+        ProductCode = RequireValue(productCode, nameof(productCode), 50);
+        UnitCode = unitCode > 0 ? unitCode : throw new DomainException("unitCode must be greater than zero.");
+        UnitDescription = RequireValue(unitDescription, nameof(unitDescription), 10);
+    }
+
     public static SifenDocumentLine Create(
         Guid tenantId,
         Guid documentId,

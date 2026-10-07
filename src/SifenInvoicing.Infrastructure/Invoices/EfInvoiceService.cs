@@ -14,6 +14,7 @@ using SifenInvoicing.Application.Operations;
 using SifenInvoicing.Application.Security;
 using SifenInvoicing.Application.Sifen;
 using SifenInvoicing.Application.Tenancy;
+using SifenInvoicing.Application.XmlDe;
 using SifenInvoicing.Application.XmlSigning;
 using SifenInvoicing.Domain.Common;
 using SifenInvoicing.Domain.Documents;
@@ -33,8 +34,8 @@ public sealed class EfInvoiceService : IInvoiceService
 
     private readonly SifenDbContext _dbContext;
     private readonly ITenantContextAccessor _tenantContextAccessor;
-    private readonly IFacturaXmlGenerator _xmlGenerator;
-    private readonly IFacturaXmlPreSubmissionValidator _xmlPreSubmissionValidator;
+    private readonly SifenDeXmlBuilder _deXmlBuilder;
+    private readonly ISifenDeXsdValidator _deXsdValidator;
     private readonly IInvoiceKudePdfRenderer _invoiceKudePdfRenderer;
     private readonly ITenantCertificateValidator _tenantCertificateValidator;
     private readonly IXmlDocumentSigner _xmlDocumentSigner;
@@ -50,8 +51,8 @@ public sealed class EfInvoiceService : IInvoiceService
     public EfInvoiceService(
         SifenDbContext dbContext,
         ITenantContextAccessor tenantContextAccessor,
-        IFacturaXmlGenerator xmlGenerator,
-        IFacturaXmlPreSubmissionValidator xmlPreSubmissionValidator,
+        SifenDeXmlBuilder deXmlBuilder,
+        ISifenDeXsdValidator deXsdValidator,
         IInvoiceKudePdfRenderer invoiceKudePdfRenderer,
         ITenantCertificateValidator tenantCertificateValidator,
         IXmlDocumentSigner xmlDocumentSigner,
@@ -66,8 +67,8 @@ public sealed class EfInvoiceService : IInvoiceService
     {
         _dbContext = dbContext;
         _tenantContextAccessor = tenantContextAccessor;
-        _xmlGenerator = xmlGenerator;
-        _xmlPreSubmissionValidator = xmlPreSubmissionValidator;
+        _deXmlBuilder = deXmlBuilder;
+        _deXsdValidator = deXsdValidator;
         _invoiceKudePdfRenderer = invoiceKudePdfRenderer;
         _tenantCertificateValidator = tenantCertificateValidator;
         _xmlDocumentSigner = xmlDocumentSigner;
@@ -126,6 +127,37 @@ public sealed class EfInvoiceService : IInvoiceService
                 "Taxpayer profile is missing TaxpayerType or Address.");
         }
 
+        // 3b. Datos del DE01 que no dependen del numero: emisor (gEmis/gActEco), receptor, operacion e items.
+        //     Todo dato obligatorio ausente se rechaza AQUI, antes de reservar numero; nada se inventa.
+        var economicActivities = await _dbContext.TaxpayerEconomicActivities
+            .Where(activity => activity.TaxpayerProfileId == taxpayer.Id)
+            .OrderBy(activity => activity.SortOrder)
+            .ThenBy(activity => activity.Code)
+            .Select(activity => new SifenDeEconomicActivity(activity.Code, activity.Description))
+            .ToListAsync(cancellationToken);
+
+        SifenDeEmitter emitter;
+        try
+        {
+            emitter = SifenDeEmitterMapper.Map(taxpayer, economicActivities);
+        }
+        catch (DomainException ex)
+        {
+            throw new UserFacingException(
+                "FISCAL_CONFIGURATION_INCOMPLETE",
+                "Configuration",
+                ex.Message,
+                "Completa el perfil fiscal del emisor (incluida su actividad economica) antes de emitir.",
+                false,
+                422,
+                ex.Message);
+        }
+
+        var requestPlan = SifenDeInputAssembler.PlanRequest(
+            command,
+            SifenDeInputAssembler.ParseOptionalInt(_configuration["Sifen:De:DefaultTransactionType"]),
+            SifenDeInputAssembler.ParseOptionalInt(_configuration["Sifen:De:DefaultPresenceIndicator"]));
+
         var diagnostic = await EnsureSubmissionIsAllowedAsync(tenantId, environment, cancellationToken);
         var allowUnsignedLocalValidationOverride = IsUnsignedLocalValidationOverrideEnabled(diagnostic.TransportMode);
         var requiresUnsignedLocalDraft = RequiresUnsignedLocalDraft(diagnostic, allowUnsignedLocalValidationOverride);
@@ -143,15 +175,17 @@ public sealed class EfInvoiceService : IInvoiceService
             command.Currency.ToString());
         var itemDescriptions = command.Items.Select(item => item.Description.Trim()).ToList();
 
-        // 5. Transaccion unica: reserva de numero -> codigo de seguridad -> CDC -> XML -> persistencia.
-        //    Si algo falla antes del commit, el numero no queda consumido. Sin red dentro de la transaccion.
+        // 5. Transaccion unica: reserva de numero -> codigo de seguridad -> CDC -> XML (SifenDeXmlBuilder) -> XSD local
+        //    -> persistencia -> commit. Si el XML no se puede construir o no valida contra el XSD oficial, la transaccion
+        //    se revierte: el numero no queda consumido y no existe documento. Sin red dentro de la transaccion.
         //    (El proveedor InMemory de pruebas no soporta transacciones.)
         await using IDbContextTransaction? transaction = _dbContext.Database.IsRelational()
             ? await _dbContext.Database.BeginTransactionAsync(cancellationToken)
             : null;
 
         SifenDocument document;
-        GeneratedFacturaXmlResult generated;
+        string generatedCdc;
+        string generatedXml;
         string correlationId;
 
         try
@@ -165,37 +199,38 @@ public sealed class EfInvoiceService : IInvoiceService
                 cancellationToken);
             var securityCode = SecurityCodeGenerator.Generate(reserved.FormattedNumber);
 
-            var xmlInput = new GenerateFacturaXmlInput(
-                new GenerateCdcInput(
-                    FacturaDocumentTypeCode,
-                    taxpayer.RucNumber,
-                    taxpayer.RucCheckDigit,
-                    reserved.EstablishmentCode,
-                    reserved.ExpeditionPointCode,
-                    reserved.FormattedNumber,
-                    taxpayer.TaxpayerType.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    NormalEmissionType,
-                    securityCode,
-                    fiscalNow.ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture)),
-                _clock.UtcNow,
-                1, // dSisFact: legado, se elimina con el builder oficial (NT-10) en Fase 4
-                taxpayer.LegalName,
-                taxpayer.Address,
-                command.ReceptorNombre,
-                command.ReceptorTipoDocumento,
-                command.ReceptorDocumento,
-                command.Currency,
-                command.SaleCondition,
-                fiscal,
-                itemDescriptions);
-            generated = _xmlGenerator.GenerateFacturaXML(xmlInput);
-            ValidateGeneratedFacturaResult(generated);
+            var cdc = CdcGenerator.GenerateCDC(new GenerateCdcInput(
+                FacturaDocumentTypeCode,
+                taxpayer.RucNumber,
+                taxpayer.RucCheckDigit,
+                reserved.EstablishmentCode,
+                reserved.ExpeditionPointCode,
+                reserved.FormattedNumber,
+                taxpayer.TaxpayerType.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                NormalEmissionType,
+                securityCode,
+                fiscalNow.ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture)));
+
+            // El CDC se calcula UNA vez aqui y lo reciben, sin regenerarlo, el builder, el documento y la integridad.
+            var buildInput = SifenDeInputAssembler.Assemble(
+                requestPlan,
+                emitter,
+                reserved,
+                cdc,
+                fiscalNow.DateTime,
+                environment == SifenEnvironmentType.Test ? SifenDeEnvironment.Test : SifenDeEnvironment.Production,
+                fiscal);
+            var built = _deXmlBuilder.Build(buildInput);
+            SifenDeXmlIntegrity.Verify(built.Xml, cdc, fiscal);
+            await _deXsdValidator.EnsureValidAsync(built.Xml, cancellationToken);
+            generatedCdc = built.Cdc;
+            generatedXml = built.Xml;
 
             var totals = fiscal.Totals;
             document = SifenDocument.CreateInvoice(
                 tenantId,
                 environment,
-                generated.Cdc,
+                generatedCdc,
                 FacturaDocumentTypeName,
                 reserved.FormattedNumber,
                 reserved.EstablishmentCode,
@@ -214,8 +249,8 @@ public sealed class EfInvoiceService : IInvoiceService
                 totals.SubExento,
                 totals.TotalIva,
                 totals.TotalGeneral,
-                generated.Xml,
-                BuildTestCdc(generated.Cdc),
+                generatedXml,
+                BuildTestCdc(generatedCdc),
                 BuildTestQrText(reserved.FormattedNumber, command.ReceptorNombre),
                 false,
                 fiscalNow);
@@ -225,7 +260,8 @@ public sealed class EfInvoiceService : IInvoiceService
 
             _dbContext.Documents.Add(document);
             _dbContext.DocumentLines.AddRange(fiscal.Lines.Select((line, index) =>
-                SifenDocumentLine.Create(
+            {
+                var documentLine = SifenDocumentLine.Create(
                     tenantId,
                     document.Id,
                     line.Number,
@@ -236,8 +272,13 @@ public sealed class EfInvoiceService : IInvoiceService
                     line.LiquidacionIva,
                     line.BaseExenta,
                     line.TotalOperacion,
-                    line.TotalOperacion)));
-            _dbContext.DocumentLogs.Add(CreateLog(tenantId, document.Id, DocumentLogLevel.Information, "xml.generated", "Invoice XML generated."));
+                    line.TotalOperacion);
+                var item = requestPlan.Items[index];
+                documentLine.SetCatalogData(item.Code, item.UnitCode, item.UnitDescription);
+                return documentLine;
+            }));
+            _dbContext.DocumentLogs.Add(CreateLog(tenantId, document.Id, DocumentLogLevel.Information, "xml.generated", "Invoice XML generated (SifenDeXmlBuilder)."));
+            _dbContext.DocumentLogs.Add(CreateLog(tenantId, document.Id, DocumentLogLevel.Information, "xml.validated", "Invoice XML validated against the local official XSD v150 before commit."));
             _dbContext.FeInvoiceEvents.Add(FeInvoiceEvent.Create(
                 tenantId,
                 document.Id,
@@ -290,29 +331,6 @@ public sealed class EfInvoiceService : IInvoiceService
             throw;
         }
 
-        try
-        {
-            await _xmlPreSubmissionValidator.ValidateTipoDoc01Async(generated.Xml, generated.Cdc, tenantId, environment, cancellationToken);
-            _dbContext.DocumentLogs.Add(CreateLog(tenantId, document.Id, DocumentLogLevel.Information, "xml.validated", "Invoice XML validated locally."));
-        }
-        catch (Exception ex) when (IsInternalValidationRuntime(ex) && IsDiagnosticTransport(diagnostic.TransportMode))
-        {
-            if (allowUnsignedLocalValidationOverride && IsMissingFullValidationDependency(ex))
-            {
-                return await CompleteUnsignedLocalDraftAsync(
-                    document,
-                    ex.Message,
-                    cancellationToken);
-            }
-
-            return await CompleteInternalValidationFailureAsync(
-                document,
-                "INTERNAL_VALIDATION_XSD_FAILED",
-                ex.Message,
-                "internal.validation.failed",
-                cancellationToken);
-        }
-
         if (requiresUnsignedLocalDraft)
         {
             return await CompleteUnsignedLocalDraftAsync(
@@ -330,8 +348,8 @@ public sealed class EfInvoiceService : IInvoiceService
                     new SignXmlDocumentCommand(
                         tenantId,
                         environment,
-                        generated.Cdc,
-                        generated.Xml),
+                        generatedCdc,
+                        generatedXml),
                     cancellationToken);
 
                 signedXml = signed.SignedXml;
@@ -390,7 +408,7 @@ public sealed class EfInvoiceService : IInvoiceService
                 "Internal FE validation completed without calling SIFEN.",
                 JsonSerializer.Serialize(new
                 {
-                    generated.Cdc,
+                    generatedCdc,
                     signed = canSignLocally,
                     environment = environment.ToString(),
                     transportMode = diagnostic.TransportMode
@@ -415,7 +433,7 @@ public sealed class EfInvoiceService : IInvoiceService
             new SendToSifenCommand(
                 tenantId,
                 environment,
-                generated.Cdc,
+                generatedCdc,
                 signedXml!),
             cancellationToken);
 
@@ -1128,51 +1146,6 @@ public sealed class EfInvoiceService : IInvoiceService
                 throw new DomainException("Item vatRate must be 10, 5 or 0.");
             }
         }
-    }
-
-    private static void ValidateGeneratedFacturaResult(GeneratedFacturaXmlResult generated)
-    {
-        if (!Application.Cdc.CdcGenerator.ValidateCDC(generated.Cdc))
-        {
-            throw new DomainException("Generated CDC is invalid.");
-        }
-
-        var document = System.Xml.Linq.XDocument.Parse(generated.Xml, System.Xml.Linq.LoadOptions.PreserveWhitespace);
-        System.Xml.Linq.XNamespace ns = "http://ekuatia.set.gov.py/sifen/xsd";
-        var de = document.Root?.Element(ns + "DE")
-            ?? throw new DomainException("Generated FE XML must contain DE.");
-        var totals = de.Element(ns + "gTotSub")
-            ?? throw new DomainException("Generated FE XML must contain gTotSub.");
-
-        ValidateXmlTotal(totals, ns + "dSubExe", generated.TotalExento);
-        ValidateXmlTotal(totals, ns + "dSub5", generated.TotalGravado5);
-        ValidateXmlTotal(totals, ns + "dSub10", generated.TotalGravado10);
-        ValidateXmlTotal(totals, ns + "dTotIVA", generated.TotalIva);
-        ValidateXmlTotal(totals, ns + "dTotGralOpe", generated.TotalGeneral);
-
-        if (Round(generated.TotalGeneral) != Round(generated.TotalGravado10 + generated.TotalGravado5 + generated.TotalExento))
-        {
-            throw new DomainException("Generated FE XML totals are inconsistent.");
-        }
-    }
-
-    private static void ValidateXmlTotal(System.Xml.Linq.XElement totals, System.Xml.Linq.XName elementName, decimal expected)
-    {
-        var rawValue = totals.Element(elementName)?.Value;
-        if (!decimal.TryParse(rawValue, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var parsed))
-        {
-            throw new DomainException($"Generated FE XML must contain numeric total {elementName.LocalName}.");
-        }
-
-        if (Round(parsed) != Round(expected))
-        {
-            throw new DomainException("Generated FE XML totals are inconsistent.");
-        }
-    }
-
-    private static decimal Round(decimal value)
-    {
-        return Math.Round(value, 2, MidpointRounding.AwayFromZero);
     }
 
     /// <summary>Ambiente activo de la plataforma (Sifen:ActiveEnvironment); nunca lo decide el cliente.</summary>

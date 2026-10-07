@@ -35,7 +35,7 @@ public sealed class FeApiInvoiceEndpointTests
                 CurrencyCode = "PYG",
                 SaleCondition = "Contado",
                 ReceiverName = "Cliente Demo",
-                ReceiverDocument = "80099999",
+                ReceiverDocument = "1234567",
                 ReceiverAddress = "Barrio Demo",
                 ReceiverEmail = "cliente@test.py",
                 ReceiverPhone = "0981000000",
@@ -46,6 +46,8 @@ public sealed class FeApiInvoiceEndpointTests
                     {
                         Description = "Servicio mensual",
                         Quantity = 1,
+                        Code = "SRV-001",
+                        UnitCode = 77,
                         UnitPrice = 100000m,
                         VatRate = 10
                     }
@@ -97,6 +99,8 @@ public sealed class FeApiInvoiceEndpointTests
                         {
                             Description = "Servicio mensual",
                             Quantity = 1,
+                            Code = "SRV-001",
+                            UnitCode = 77,
                             UnitPrice = 100000m,
                             VatRate = 10
                         }
@@ -120,13 +124,15 @@ public sealed class FeApiInvoiceEndpointTests
             {
                 CurrencyCode = "PYG",
                 ReceiverName = "Cliente IVA",
-                ReceiverDocument = "80099999",
+                ReceiverDocument = "1234567",
                 Items =
                 [
                     new InvoiceEndpoints.CreateInvoiceItemRequest
                     {
                         Description = "Gravado 10",
                         Quantity = 1,
+                        Code = "SRV-001",
+                        UnitCode = 77,
                         UnitPrice = 110000m,
                         VatRate = 10
                     },
@@ -134,6 +140,8 @@ public sealed class FeApiInvoiceEndpointTests
                     {
                         Description = "Gravado 5",
                         Quantity = 1,
+                        Code = "SRV-001",
+                        UnitCode = 77,
                         UnitPrice = 105000m,
                         VatRate = 5
                     },
@@ -141,6 +149,8 @@ public sealed class FeApiInvoiceEndpointTests
                     {
                         Description = "Exento",
                         Quantity = 1,
+                        Code = "SRV-001",
+                        UnitCode = 77,
                         UnitPrice = 50000m,
                         VatRate = 0
                     }
@@ -174,13 +184,15 @@ public sealed class FeApiInvoiceEndpointTests
                 {
                     CurrencyCode = "PYG",
                     ReceiverName = "Cliente Demo",
-                    ReceiverDocument = "80099999",
+                    ReceiverDocument = "1234567",
                     Items =
                     [
                         new InvoiceEndpoints.CreateInvoiceItemRequest
                         {
                             Description = "Servicio mensual",
                             Quantity = 1,
+                            Code = "SRV-001",
+                            UnitCode = 77,
                             UnitPrice = 100000m,
                             VatRate = 7
                         }
@@ -305,8 +317,8 @@ public sealed class FeApiInvoiceEndpointTests
         var service = new EfInvoiceService(
             dbContext,
             tenantAccessor,
-            new FacturaXmlGenerator(),
-            new PassThroughFacturaXmlPreSubmissionValidator(),
+            DeTestKit.Builder(),
+            DeTestKit.Xsd(),
             new InvoiceKudePdfRenderer(),
             new ReadyTenantCertificateValidator(),
             new FakeXmlDocumentSigner(),
@@ -335,14 +347,10 @@ public sealed class FeApiInvoiceEndpointTests
     private static IConfiguration CreateConfiguration()
     {
         return new ConfigurationBuilder()
-            .AddInMemoryCollection([])
+            .AddInMemoryCollection(DeTestKit.DeDefaults)
             .Build();
     }
 
-    private sealed class PassThroughFacturaXmlPreSubmissionValidator : IFacturaXmlPreSubmissionValidator
-    {
-        public Task ValidateTipoDoc01Async(string xml, string cdc, Guid tenantId, SifenEnvironmentType environment, CancellationToken cancellationToken = default) => Task.CompletedTask;
-    }
 
     private sealed class ReadyTenantCertificateValidator : ITenantCertificateValidator
     {

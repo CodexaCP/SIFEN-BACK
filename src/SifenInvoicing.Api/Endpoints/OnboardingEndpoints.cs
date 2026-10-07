@@ -79,7 +79,10 @@ public static class OnboardingEndpoints
                     request.CityCode,
                     request.CityDescription,
                     request.Phone,
-                    request.Email),
+                    request.Email,
+                    request.EconomicActivities?
+                        .Select(activity => new RegisterEconomicActivity(activity.Code, activity.Description))
+                        .ToList()),
                 cancellationToken);
 
             return Results.NoContent();
@@ -245,7 +248,10 @@ public static class OnboardingEndpoints
         string? CityCode,
         string? CityDescription,
         string? Phone,
-        string? Email);
+        string? Email,
+        IReadOnlyList<RegisterEconomicActivityRequest>? EconomicActivities = null);
+
+    public sealed record RegisterEconomicActivityRequest(string Code, string Description);
 
     public sealed record RegisterFiscalStampRequest(
         string Environment,

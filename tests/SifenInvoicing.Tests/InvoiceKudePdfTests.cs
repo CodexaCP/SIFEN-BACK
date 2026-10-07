@@ -138,15 +138,15 @@ public sealed class InvoiceKudePdfTests
             Guid.NewGuid().ToString(),
             null,
             "Cliente Demo",
-            InvoiceReceiverDocumentType.Ruc,
-            "80099999",
+            InvoiceReceiverDocumentType.Ci,
+            "1234567",
             null,
             null,
             null,
             InvoiceCurrency.PYG,
             InvoiceSaleCondition.Cash,
             [
-                new CreateInvoiceItemCommand("Servicio mensual", 1, 100000m, 10)
+                new CreateInvoiceItemCommand("Servicio mensual", 1, 100000m, 10, "SRV-001", 77)
             ]));
 
         return result.Id;
@@ -155,7 +155,7 @@ public sealed class InvoiceKudePdfTests
     private static IConfiguration CreateConfiguration()
     {
         return new ConfigurationBuilder()
-            .AddInMemoryCollection([])
+            .AddInMemoryCollection(DeTestKit.DeDefaults)
             .Build();
     }
 
@@ -193,8 +193,8 @@ public sealed class InvoiceKudePdfTests
             new EfInvoiceService(
             dbContext,
             tenantAccessor,
-            new FacturaXmlGenerator(),
-            new PassThroughFacturaXmlPreSubmissionValidator(),
+            DeTestKit.Builder(),
+            DeTestKit.Xsd(),
             new InvoiceKudePdfRenderer(),
              new ReadyTenantCertificateValidator(),
              new FakeXmlDocumentSigner(),
@@ -218,10 +218,6 @@ public sealed class InvoiceKudePdfTests
         });
     }
 
-    private sealed class PassThroughFacturaXmlPreSubmissionValidator : IFacturaXmlPreSubmissionValidator
-    {
-        public Task ValidateTipoDoc01Async(string xml, string cdc, Guid tenantId, SifenEnvironmentType environment, CancellationToken cancellationToken = default) => Task.CompletedTask;
-    }
 
     private sealed class ReadyTenantCertificateValidator : ITenantCertificateValidator
     {

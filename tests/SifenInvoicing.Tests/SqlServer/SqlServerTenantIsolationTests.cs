@@ -118,7 +118,7 @@ public sealed class SqlServerTenantIsolationTests(SqlServerFixture fixture)
         await using var anonymousDb = fixture.NewContext(null);
         var service = new SifenInvoicing.Infrastructure.Invoices.EfInvoiceService(
             anonymousDb, new SifenInvoicing.Infrastructure.Tenancy.AsyncLocalTenantContextAccessor(),
-            new SifenInvoicing.Application.Invoices.FacturaXmlGenerator(), new PassThroughValidator(),
+            DeTestKit.Builder(), DeTestKit.Xsd(),
             new SifenInvoicing.Infrastructure.Invoices.InvoiceKudePdfRenderer(), new ReadyCertificateValidator(), new FakeSigner(),
             new StubReadiness(), new CountingGateway(), new FakeParser(), SqlServerFakes.Configuration(), new NullAudit(),
             new SifenInvoicing.Infrastructure.Diagnostics.SystemClock(),

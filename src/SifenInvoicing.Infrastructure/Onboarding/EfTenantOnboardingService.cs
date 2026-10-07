@@ -3,6 +3,7 @@ using SifenInvoicing.Application.Auditing;
 using SifenInvoicing.Application.Diagnostics;
 using SifenInvoicing.Application.Onboarding;
 using SifenInvoicing.Application.Security;
+using SifenInvoicing.Domain.Common;
 using SifenInvoicing.Domain.Tenants;
 using SifenInvoicing.Infrastructure.Persistence;
 
@@ -114,6 +115,22 @@ public sealed class EfTenantOnboardingService : ITenantOnboardingService
             command.CityDescription,
             command.Phone,
             command.Email);
+
+        if (command.EconomicActivities is not null)
+        {
+            if (command.EconomicActivities.Count > TaxpayerEconomicActivity.MaxPerTaxpayer)
+            {
+                throw new DomainException($"At most {TaxpayerEconomicActivity.MaxPerTaxpayer} economic activities are allowed (Manual v150 D130).");
+            }
+
+            // Reemplaza el conjunto de actividades del perfil (gActEco, 1-9).
+            var existing = await _dbContext.TaxpayerEconomicActivities.IgnoreQueryFilters()
+                .Where(item => item.TaxpayerProfileId == profile.Id)
+                .ToListAsync(cancellationToken);
+            _dbContext.TaxpayerEconomicActivities.RemoveRange(existing);
+            _dbContext.TaxpayerEconomicActivities.AddRange(command.EconomicActivities.Select((activity, index) =>
+                TaxpayerEconomicActivity.Create(command.TenantId, profile.Id, activity.Code, activity.Description, index)));
+        }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
         await RecordAuditAsync("tenant.fiscal_profile.registered", command.TenantId, command.TenantId, "Registered", cancellationToken);

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using SifenInvoicing.Application.Auditing;
 using SifenInvoicing.Application.Diagnostics;
 using SifenInvoicing.Application.Invoices;
+using SifenInvoicing.Application.XmlDe;
 using SifenInvoicing.Application.Operations;
 using SifenInvoicing.Application.Security;
 using SifenInvoicing.Application.Sifen;
@@ -18,7 +19,7 @@ using SifenInvoicing.Infrastructure.Tenancy;
 
 namespace SifenInvoicing.Tests;
 
-public sealed class InvoiceServiceTests
+public sealed partial class InvoiceServiceTests
 {
     [Fact]
     public async Task CreateAsync_ShouldPersistInternalValidation_WhenTransportModeIsDiagnostic()
@@ -54,8 +55,8 @@ public sealed class InvoiceServiceTests
         var service = new EfInvoiceService(
             dbContext,
             tenantAccessor,
-            new FacturaXmlGenerator(),
-            new PassThroughFacturaXmlPreSubmissionValidator(),
+            DeTestKit.Builder(),
+            DeTestKit.Xsd(),
             new InvoiceKudePdfRenderer(),
             new ReadyTenantCertificateValidator(),
             new FakeXmlDocumentSigner(),
@@ -72,15 +73,15 @@ public sealed class InvoiceServiceTests
             Guid.NewGuid().ToString(),
             null,
             "Cliente Demo",
-            InvoiceReceiverDocumentType.Ruc,
-            "80099999",
+            InvoiceReceiverDocumentType.Ci,
+            "1234567",
             null,
             null,
             null,
             InvoiceCurrency.PYG,
             InvoiceSaleCondition.Cash,
             [
-                new CreateInvoiceItemCommand("Servicio mensual", 1, 100000m, 10)
+                new CreateInvoiceItemCommand("Servicio mensual", 1, 100000m, 10, "SRV-001", 77)
             ]));
 
         var stored = await service.GetByIdAsync(result.Id);
@@ -92,79 +93,6 @@ public sealed class InvoiceServiceTests
         Assert.NotNull(stored.SignedXmlPayload);
         Assert.Equal(0, submissionGateway.SendCount);
         Assert.Contains(stored.Logs, log => log.EventType == "internal.validation.completed");
-    }
-
-    [Fact]
-    public async Task CreateAsync_ShouldPersistInternalValidationFailed_WhenLocalXsdValidationFailsInDiagnosticMode()
-    {
-        var tenant = Tenant.CreateSharedDatabaseTenant("acme-xsd", "ACME XSD");
-        var tenantId = tenant.Id;
-        var tenantAccessor = new AsyncLocalTenantContextAccessor();
-        tenantAccessor.SetCurrent(new TenantContext
-        {
-            TenantId = tenantId.ToString(),
-            ResolvedTenantId = tenantId,
-            IsResolved = true
-        });
-
-        await using var dbContext = CreateDbContext(tenantAccessor);
-        dbContext.Tenants.Add(tenant);
-        TestFiscalSetup.Seed(dbContext, tenantId);
-        dbContext.TenantCertificateMetadata.Add(TenantCertificateMetadata.Create(
-            tenantId,
-            SifenEnvironmentType.Test,
-            CertificatePurpose.XmlSignature,
-            "xml-signing",
-            "CN=ACME",
-            "ABC123",
-            "123",
-            "config:certificate",
-            "config:password",
-            DateTimeOffset.UtcNow.AddDays(-1),
-            DateTimeOffset.UtcNow.AddDays(30)));
-        await dbContext.SaveChangesAsync();
-
-        var submissionGateway = new CountingSubmissionGateway();
-        var service = new EfInvoiceService(
-            dbContext,
-            tenantAccessor,
-            new FacturaXmlGenerator(),
-            new FailingFacturaXmlPreSubmissionValidator("XSD root path is invalid."),
-            new InvoiceKudePdfRenderer(),
-            new ReadyTenantCertificateValidator(),
-            new FakeXmlDocumentSigner(),
-            new StubOperationalReadinessReporter(),
-            submissionGateway,
-            new FakeResponseParser(),
-            CreateConfiguration(),
-            new NullAuditTrail(),
-            new SystemClock(),
-            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
-            new TestFiscalClock());
-
-        var result = await service.CreateAsync(new CreateInvoiceCommand(
-            Guid.NewGuid().ToString(),
-            null,
-            "Cliente Demo",
-            InvoiceReceiverDocumentType.Ruc,
-            "80099999",
-            null,
-            null,
-            null,
-            InvoiceCurrency.PYG,
-            InvoiceSaleCondition.Cash,
-            [
-                new CreateInvoiceItemCommand("Servicio mensual", 1, 100000m, 10)
-            ]));
-
-        var stored = await service.GetByIdAsync(result.Id);
-
-        Assert.NotNull(stored);
-        Assert.Equal(SifenDocumentStatus.InternalValidationFailed, stored!.Status);
-        Assert.Equal("INTERNAL_VALIDATION_XSD_FAILED", stored.StatusCode);
-        Assert.Contains("XSD root path is invalid.", stored.StatusMessage, StringComparison.Ordinal);
-        Assert.Equal(0, submissionGateway.SendCount);
-        Assert.Contains(stored.Logs, log => log.EventType == "internal.validation.failed");
     }
 
     [Fact]
@@ -188,8 +116,8 @@ public sealed class InvoiceServiceTests
         var service = new EfInvoiceService(
             dbContext,
             tenantAccessor,
-            new FacturaXmlGenerator(),
-            new PassThroughFacturaXmlPreSubmissionValidator(),
+            DeTestKit.Builder(),
+            DeTestKit.Xsd(),
             new InvoiceKudePdfRenderer(),
             new ReadyTenantCertificateValidator(),
             new FakeXmlDocumentSigner(),
@@ -227,8 +155,8 @@ public sealed class InvoiceServiceTests
         var service = new EfInvoiceService(
             dbContext,
             tenantAccessor,
-            new FacturaXmlGenerator(),
-            new PassThroughFacturaXmlPreSubmissionValidator(),
+            DeTestKit.Builder(),
+            DeTestKit.Xsd(),
             new InvoiceKudePdfRenderer(),
             new ReadyTenantCertificateValidator(),
             new FakeXmlDocumentSigner(),
@@ -280,8 +208,8 @@ public sealed class InvoiceServiceTests
         var service = new EfInvoiceService(
             dbContext,
             tenantAccessor,
-            new FacturaXmlGenerator(),
-            new PassThroughFacturaXmlPreSubmissionValidator(),
+            DeTestKit.Builder(),
+            DeTestKit.Xsd(),
             new InvoiceKudePdfRenderer(),
             new ReadyTenantCertificateValidator(),
             new FakeXmlDocumentSigner(),
@@ -298,14 +226,14 @@ public sealed class InvoiceServiceTests
             Guid.NewGuid().ToString(),
             null,
             "Cliente Demo",
-            InvoiceReceiverDocumentType.Ruc,
-            "80099999",
+            InvoiceReceiverDocumentType.Ci,
+            "1234567",
             null,
             null,
             null,
             InvoiceCurrency.PYG,
             InvoiceSaleCondition.Cash,
-            [new CreateInvoiceItemCommand("Servicio mensual", 1, 100000m, 10)]));
+            [new CreateInvoiceItemCommand("Servicio mensual", 1, 100000m, 10, "SRV-001", 77)]));
 
         var found = await service.SearchAsync(new InvoiceSearchQuery(
             SifenDocumentStatus.Accepted,
@@ -317,73 +245,6 @@ public sealed class InvoiceServiceTests
         var match = Assert.Single(found);
         Assert.Equal("0000007", match.ExternalDocumentNumber);
         Assert.Equal(SifenDocumentStatus.Accepted, match.Status);
-    }
-
-    [Fact]
-    public async Task CreateAsync_ShouldFailBeforeSending_WhenGeneratedTotalsAreInconsistent()
-    {
-        var tenant = Tenant.CreateSharedDatabaseTenant("acme-2", "ACME 2");
-        var tenantId = tenant.Id;
-        var tenantAccessor = new AsyncLocalTenantContextAccessor();
-        tenantAccessor.SetCurrent(new TenantContext
-        {
-            TenantId = tenantId.ToString(),
-            ResolvedTenantId = tenantId,
-            IsResolved = true
-        });
-
-        await using var dbContext = CreateDbContext(tenantAccessor);
-        dbContext.Tenants.Add(tenant);
-        TestFiscalSetup.Seed(dbContext, tenantId);
-        dbContext.TenantCertificateMetadata.Add(TenantCertificateMetadata.Create(
-            tenantId,
-            SifenEnvironmentType.Test,
-            CertificatePurpose.XmlSignature,
-            "xml-signing",
-            "CN=ACME",
-            "ABC123",
-            "123",
-            "config:certificate",
-            "config:password",
-            DateTimeOffset.UtcNow.AddDays(-1),
-            DateTimeOffset.UtcNow.AddDays(30)));
-        await dbContext.SaveChangesAsync();
-
-        var gateway = new CountingSubmissionGateway();
-        var service = new EfInvoiceService(
-            dbContext,
-            tenantAccessor,
-            new InconsistentFacturaXmlGenerator(),
-            new PassThroughFacturaXmlPreSubmissionValidator(),
-            new InvoiceKudePdfRenderer(),
-            new ReadyTenantCertificateValidator(),
-            new FakeXmlDocumentSigner(),
-            new StubOperationalReadinessReporter(),
-            gateway,
-            new FakeResponseParser(),
-            CreateConfiguration(),
-            new NullAuditTrail(),
-            new SystemClock(),
-            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
-            new TestFiscalClock());
-
-        var exception = await Assert.ThrowsAsync<DomainException>(() => service.CreateAsync(new CreateInvoiceCommand(
-            Guid.NewGuid().ToString(),
-            null,
-            "Cliente Demo",
-            InvoiceReceiverDocumentType.Ruc,
-            "80099999",
-            null,
-            null,
-            null,
-            InvoiceCurrency.PYG,
-            InvoiceSaleCondition.Cash,
-            [
-                new CreateInvoiceItemCommand("Servicio mensual", 1, 100000m, 10)
-            ])));
-
-        Assert.Contains("totals are inconsistent", exception.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(0, gateway.SendCount);
     }
 
     [Fact]
@@ -419,8 +280,8 @@ public sealed class InvoiceServiceTests
         var service = new EfInvoiceService(
             dbContext,
             tenantAccessor,
-            new FacturaXmlGenerator(),
-            new PassThroughFacturaXmlPreSubmissionValidator(),
+            DeTestKit.Builder(),
+            DeTestKit.Xsd(),
             new InvoiceKudePdfRenderer(),
             new ReadyTenantCertificateValidator(),
             new FakeXmlDocumentSigner(),
@@ -437,15 +298,15 @@ public sealed class InvoiceServiceTests
             Guid.NewGuid().ToString(),
             null,
             "Cliente Demo",
-            InvoiceReceiverDocumentType.Ruc,
-            "80099999",
+            InvoiceReceiverDocumentType.Ci,
+            "1234567",
             null,
             null,
             null,
             InvoiceCurrency.PYG,
             InvoiceSaleCondition.Cash,
             [
-                new CreateInvoiceItemCommand("Servicio mensual", 1, 100000m, 10)
+                new CreateInvoiceItemCommand("Servicio mensual", 1, 100000m, 10, "SRV-001", 77)
             ]));
 
         var stored = await service.GetByIdAsync(result.Id);
@@ -480,8 +341,8 @@ public sealed class InvoiceServiceTests
         var service = new EfInvoiceService(
             dbContext,
             tenantAccessor,
-            new FacturaXmlGenerator(),
-            new PassThroughFacturaXmlPreSubmissionValidator(),
+            DeTestKit.Builder(),
+            DeTestKit.Xsd(),
             new InvoiceKudePdfRenderer(),
             new ReadyTenantCertificateValidator(),
             new FakeXmlDocumentSigner(),
@@ -522,8 +383,8 @@ public sealed class InvoiceServiceTests
         var failedService = new EfInvoiceService(
             dbContext,
             tenantAccessor,
-            new FacturaXmlGenerator(),
-            new PassThroughFacturaXmlPreSubmissionValidator(),
+            DeTestKit.Builder(),
+            DeTestKit.Xsd(),
             new InvoiceKudePdfRenderer(),
             new ReadyTenantCertificateValidator(),
             new FakeXmlDocumentSigner(),
@@ -541,8 +402,8 @@ public sealed class InvoiceServiceTests
         var retryService = new EfInvoiceService(
             dbContext,
             tenantAccessor,
-            new FacturaXmlGenerator(),
-            new PassThroughFacturaXmlPreSubmissionValidator(),
+            DeTestKit.Builder(),
+            DeTestKit.Xsd(),
             new InvoiceKudePdfRenderer(),
             new ReadyTenantCertificateValidator(),
             new FakeXmlDocumentSigner(),
@@ -587,8 +448,8 @@ public sealed class InvoiceServiceTests
         var service = new EfInvoiceService(
             dbContext,
             tenantAccessor,
-            new FacturaXmlGenerator(),
-            new PassThroughFacturaXmlPreSubmissionValidator(),
+            DeTestKit.Builder(),
+            DeTestKit.Xsd(),
             new InvoiceKudePdfRenderer(),
             new ReadyTenantCertificateValidator(),
             new FakeXmlDocumentSigner(),
@@ -630,8 +491,8 @@ public sealed class InvoiceServiceTests
         var failedService = new EfInvoiceService(
             dbContext,
             tenantAccessor,
-            new FacturaXmlGenerator(),
-            new PassThroughFacturaXmlPreSubmissionValidator(),
+            DeTestKit.Builder(),
+            DeTestKit.Xsd(),
             new InvoiceKudePdfRenderer(),
             new ReadyTenantCertificateValidator(),
             new FakeXmlDocumentSigner(),
@@ -649,8 +510,8 @@ public sealed class InvoiceServiceTests
         var retryService = new EfInvoiceService(
             dbContext,
             tenantAccessor,
-            new FacturaXmlGenerator(),
-            new PassThroughFacturaXmlPreSubmissionValidator(),
+            DeTestKit.Builder(),
+            DeTestKit.Xsd(),
             new InvoiceKudePdfRenderer(),
             new ReadyTenantCertificateValidator(),
             new FakeXmlDocumentSigner(),
@@ -692,8 +553,8 @@ public sealed class InvoiceServiceTests
         var service = new EfInvoiceService(
             dbContext,
             tenantAccessor,
-            new FacturaXmlGenerator(),
-            new PassThroughFacturaXmlPreSubmissionValidator(),
+            DeTestKit.Builder(),
+            DeTestKit.Xsd(),
             new InvoiceKudePdfRenderer(),
             new ReadyTenantCertificateValidator(),
             new FakeXmlDocumentSigner(),
@@ -735,8 +596,8 @@ public sealed class InvoiceServiceTests
         var service = new EfInvoiceService(
             dbContext,
             tenantAccessor,
-            new FacturaXmlGenerator(),
-            new FailingFacturaXmlPreSubmissionValidator("TODO: Official XSD path for FE TipoDoc 01 is not configured. XML validation must be completed before signing or sending."),
+            DeTestKit.Builder(),
+            DeTestKit.Xsd(),
             new InvoiceKudePdfRenderer(),
             new MissingTenantCertificateValidator(),
             new FakeXmlDocumentSigner(),
@@ -783,7 +644,11 @@ public sealed class InvoiceServiceTests
         bool fiscalProfile = true,
         long firstNumber = 1,
         ITenantContextAccessor? sharedAccessor = null,
-        SifenDbContext? sharedDb = null)
+        SifenDbContext? sharedDb = null,
+        SifenDeXmlBuilder? builder = null,
+        ISifenDeXsdValidator? xsd = null,
+        bool withActivity = true,
+        Action<TaxpayerProfile>? customizeTaxpayer = null)
     {
         var tenant = Tenant.CreateSharedDatabaseTenant($"fiscal-{Guid.NewGuid():N}"[..20], "FISCAL");
         var tenantId = tenantIdOverride ?? tenant.Id;
@@ -794,7 +659,13 @@ public sealed class InvoiceServiceTests
 
         if (fiscalProfile)
         {
-            dbContext.TaxpayerProfiles.Add(TestFiscalSetup.Taxpayer(tenant.Id));
+            var taxpayer = TestFiscalSetup.Taxpayer(tenant.Id);
+            customizeTaxpayer?.Invoke(taxpayer);
+            dbContext.TaxpayerProfiles.Add(taxpayer);
+            if (withActivity)
+            {
+                dbContext.TaxpayerEconomicActivities.Add(TestFiscalSetup.Activity(taxpayer));
+            }
         }
         else
         {
@@ -812,7 +683,7 @@ public sealed class InvoiceServiceTests
         await dbContext.SaveChangesAsync();
 
         var service = new EfInvoiceService(
-            dbContext, accessor, new FacturaXmlGenerator(), new PassThroughFacturaXmlPreSubmissionValidator(),
+            dbContext, accessor, builder ?? DeTestKit.Builder(), xsd ?? DeTestKit.Xsd(),
             new InvoiceKudePdfRenderer(), new ReadyTenantCertificateValidator(), new FakeXmlDocumentSigner(),
             new StubOperationalReadinessReporter(), new CountingSubmissionGateway(), new FakeResponseParser(),
             CreateConfiguration(), new NullAuditTrail(), new SystemClock(),
@@ -822,8 +693,8 @@ public sealed class InvoiceServiceTests
     }
 
     private static CreateInvoiceCommand Command(string key, decimal price = 100000m, string description = "Servicio mensual") =>
-        new(key, null, "Cliente Demo", InvoiceReceiverDocumentType.Ruc, "80099999", null, null, null,
-            InvoiceCurrency.PYG, InvoiceSaleCondition.Cash, [new CreateInvoiceItemCommand(description, 1, price, 10)]);
+        new(key, null, "Cliente Demo", InvoiceReceiverDocumentType.Ci, "1234567", null, null, null,
+            InvoiceCurrency.PYG, InvoiceSaleCondition.Cash, [new CreateInvoiceItemCommand(description, 1, price, 10, "SRV-001", 77)]);
 
     [Fact]
     public async Task CreateAsync_ShouldAssignNumberStampAndCdcFromTenantFiscalConfiguration()
@@ -845,7 +716,7 @@ public sealed class InvoiceServiceTests
         Assert.Equal(44, cdc.Length);
         Assert.Equal("01", cdc[..2]);
         Assert.Equal("80012345", cdc[2..10]);
-        Assert.Equal("6", cdc[10..11]);
+        Assert.Equal("0", cdc[10..11]);
         Assert.Equal("001", cdc[11..14]);
         Assert.Equal("001", cdc[14..17]);
         Assert.Equal("0000041", cdc[17..24]);
@@ -976,7 +847,7 @@ public sealed class InvoiceServiceTests
         f.Use();
         var command = Command("k-1") with
         {
-            Items = [new CreateInvoiceItemCommand("A", 1, 150000m, 10), new CreateInvoiceItemCommand("B", 1, 150000m, 10)]
+            Items = [new CreateInvoiceItemCommand("A", 1, 150000m, 10, "SRV-001", 77), new CreateInvoiceItemCommand("B", 1, 150000m, 10, "SRV-001", 77)]
         };
 
         var result = await f.Service.CreateAsync(command);
@@ -1003,15 +874,15 @@ public sealed class InvoiceServiceTests
             Guid.NewGuid().ToString(),
             null,
             "Cliente Demo",
-            InvoiceReceiverDocumentType.Ruc,
-            "80099999",
+            InvoiceReceiverDocumentType.Ci,
+            "1234567",
             null,
             null,
             null,
             InvoiceCurrency.PYG,
             InvoiceSaleCondition.Cash,
             [
-                new CreateInvoiceItemCommand("Servicio mensual", 1, 100000m, 10)
+                new CreateInvoiceItemCommand("Servicio mensual", 1, 100000m, 10, "SRV-001", 77)
             ]));
     }
 
@@ -1020,7 +891,9 @@ public sealed class InvoiceServiceTests
         return new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Sifen:Development:AllowUnsignedInternalValidation"] = allowUnsignedInternalValidation.ToString()
+                ["Sifen:Development:AllowUnsignedInternalValidation"] = allowUnsignedInternalValidation.ToString(),
+                ["Sifen:De:DefaultTransactionType"] = "1",
+                ["Sifen:De:DefaultPresenceIndicator"] = "1"
             })
             .Build();
     }
@@ -1043,18 +916,6 @@ public sealed class InvoiceServiceTests
             DateTimeOffset.UtcNow.AddDays(30)));
     }
 
-    private sealed class PassThroughFacturaXmlPreSubmissionValidator : IFacturaXmlPreSubmissionValidator
-    {
-        public Task ValidateTipoDoc01Async(string xml, string cdc, Guid tenantId, SifenEnvironmentType environment, CancellationToken cancellationToken = default)
-        {
-            if (string.IsNullOrWhiteSpace(xml) || string.IsNullOrWhiteSpace(cdc))
-            {
-                throw new DomainException("xml and cdc are required.");
-            }
-
-            return Task.CompletedTask;
-        }
-    }
 
     private sealed class ReadyTenantCertificateValidator : ITenantCertificateValidator
     {
@@ -1132,25 +993,6 @@ public sealed class InvoiceServiceTests
         }
     }
 
-    private sealed class InconsistentFacturaXmlGenerator : IFacturaXmlGenerator
-    {
-        public GeneratedFacturaXmlResult GenerateFacturaXML(GenerateFacturaXmlInput input)
-        {
-            var valid = new FacturaXmlGenerator().GenerateFacturaXML(input);
-            var inconsistentXml = valid.Xml.Replace(
-                "<dTotGralOpe>100000</dTotGralOpe>",
-                "<dTotGralOpe>99999</dTotGralOpe>",
-                StringComparison.Ordinal);
-
-            return valid with { Xml = inconsistentXml };
-        }
-    }
-
-    private sealed class FailingFacturaXmlPreSubmissionValidator(string message) : IFacturaXmlPreSubmissionValidator
-    {
-        public Task ValidateTipoDoc01Async(string xml, string cdc, Guid tenantId, SifenEnvironmentType environment, CancellationToken cancellationToken = default)
-            => throw new DomainException(message);
-    }
 
     private sealed class FakeResponseParser : ISifenResponseParser
     {

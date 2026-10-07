@@ -157,28 +157,30 @@ public sealed class InvoiceKudePdfRenderer : IInvoiceKudePdfRenderer
             ?? throw new DomainException("KuDE cannot be generated because FE XML does not contain DE.");
         var totals = de.Element(SifenNamespace + "gTotSub")
             ?? throw new DomainException("KuDE cannot be generated because FE XML does not contain totals.");
-        var itemNodes = de.Element(SifenNamespace + "gCamItem")?.Elements(SifenNamespace + "gCamItemDet").ToList() ?? [];
+        // Estructura oficial v150 (DE_v150.xsd): gDtipDE/gCamItem*, gTimb/dNumTim, gEmis/dNomEmi, gDatRec/dDirRec (opcional).
+        var typeSpecific = de.Element(SifenNamespace + "gDtipDE");
+        var itemNodes = typeSpecific?.Elements(SifenNamespace + "gCamItem").ToList() ?? [];
         if (itemNodes.Count == 0)
         {
             throw new DomainException("KuDE cannot be generated because FE XML does not contain items.");
         }
 
         var items = itemNodes.Select(node => new KudeItem(
-            node.Element(SifenNamespace + "xDesProSer")?.Value?.Trim() ?? string.Empty,
+            node.Element(SifenNamespace + "dDesProSer")?.Value?.Trim() ?? string.Empty,
             FormatQuantity(ParseDecimal(node.Element(SifenNamespace + "dCantProSer")?.Value)),
-            FormatMoney(ParseDecimal(node.Element(SifenNamespace + "dPUniProSer")?.Value)),
-            $"{node.Element(SifenNamespace + "dTasaIVA")?.Value?.Trim() ?? "0"}%",
-            FormatMoney(ParseDecimal(node.Element(SifenNamespace + "dValTotItem")?.Value)))).ToList();
+            FormatMoney(ParseDecimal(node.Element(SifenNamespace + "gValorItem")?.Element(SifenNamespace + "dPUniProSer")?.Value)),
+            $"{node.Element(SifenNamespace + "gCamIVA")?.Element(SifenNamespace + "dTasaIVA")?.Value?.Trim() ?? "0"}%",
+            FormatMoney(ParseDecimal(node.Element(SifenNamespace + "gValorItem")?.Element(SifenNamespace + "gValorRestaItem")?.Element(SifenNamespace + "dTotOpeItem")?.Value)))).ToList();
 
         var issuer = de.Element(SifenNamespace + "gDatGralOpe")?.Element(SifenNamespace + "gEmis");
         var customer = de.Element(SifenNamespace + "gDatGralOpe")?.Element(SifenNamespace + "gDatRec");
 
         return new InvoiceSummary(
-            issuer?.Element(SifenNamespace + "xNomEmi")?.Value?.Trim(),
-            issuer?.Element(SifenNamespace + "xDirEmi")?.Value?.Trim(),
-            totals.Element(SifenNamespace + "dNumTim")?.Value?.Trim(),
-            customer?.Element(SifenNamespace + "xDirRec")?.Value?.Trim(),
-            de.Element(SifenNamespace + "gCamCond")?.Element(SifenNamespace + "iCondOpe")?.Value?.Trim() == "1" ? "Contado" : "Credito",
+            issuer?.Element(SifenNamespace + "dNomEmi")?.Value?.Trim(),
+            issuer?.Element(SifenNamespace + "dDirEmi")?.Value?.Trim(),
+            de.Element(SifenNamespace + "gTimb")?.Element(SifenNamespace + "dNumTim")?.Value?.Trim(),
+            customer?.Element(SifenNamespace + "dDirRec")?.Value?.Trim(),
+            typeSpecific?.Element(SifenNamespace + "gCamCond")?.Element(SifenNamespace + "iCondOpe")?.Value?.Trim() == "1" ? "Contado" : "Credito",
             items,
             FormatMoney(ParseDecimal(totals.Element(SifenNamespace + "dSubExe")?.Value) + ParseDecimal(totals.Element(SifenNamespace + "dSub5")?.Value) + ParseDecimal(totals.Element(SifenNamespace + "dSub10")?.Value)),
             FormatMoney(ParseDecimal(totals.Element(SifenNamespace + "dIVA5")?.Value)),

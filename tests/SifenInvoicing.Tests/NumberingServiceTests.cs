@@ -30,6 +30,12 @@ internal sealed class SqliteTestDbContext : SifenDbContext
 
         foreach (var property in modelBuilder.Model.GetEntityTypes().SelectMany(entity => entity.GetProperties()))
         {
+            // SQLite no ordena DateTimeOffset (ORDER BY): se almacena como entero binario (solo en pruebas).
+            if (property.ClrType == typeof(DateTimeOffset) || property.ClrType == typeof(DateTimeOffset?))
+            {
+                property.SetValueConverter(new Microsoft.EntityFrameworkCore.Storage.ValueConversion.DateTimeOffsetToBinaryConverter());
+            }
+
             var columnType = property.FindAnnotation("Relational:ColumnType")?.Value as string;
             if (columnType is not null && columnType.Contains("max", StringComparison.OrdinalIgnoreCase))
             {
