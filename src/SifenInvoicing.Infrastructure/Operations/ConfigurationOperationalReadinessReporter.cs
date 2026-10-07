@@ -1,10 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using SifenInvoicing.Application.Diagnostics;
+using SifenInvoicing.Application.Fiscal;
 using SifenInvoicing.Application.Invoices;
 using SifenInvoicing.Application.Operations;
 using SifenInvoicing.Application.Security;
 using SifenInvoicing.Application.Tenancy;
+using SifenInvoicing.Application.XmlDe;
 using SifenInvoicing.Application.XmlSigning;
 using SifenInvoicing.Domain.Common;
 using SifenInvoicing.Domain.Documents;
@@ -17,6 +19,7 @@ public sealed class ConfigurationOperationalReadinessReporter : IOperationalRead
 {
     private const string DiagnosticTransportMode = "Diagnostic";
     private const string LiveTransportMode = "Live";
+    private const string FacturaDocumentTypeCode = "01";
 
     private readonly IConfiguration _configuration;
     private readonly ISystemClock _clock;
@@ -24,8 +27,8 @@ public sealed class ConfigurationOperationalReadinessReporter : IOperationalRead
     private readonly SifenDbContext _dbContext;
     private readonly ITenantSecretProvider _secretProvider;
     private readonly ITenantCertificateValidator _certificateValidator;
-    private readonly IFacturaXmlGenerator _xmlGenerator;
-    private readonly IFacturaXmlPreSubmissionValidator _xmlPreSubmissionValidator;
+    private readonly ISifenDeXsdValidator _deXsdValidator;
+    private readonly IFiscalClock _fiscalClock;
     private readonly IXmlDocumentSigner _xmlDocumentSigner;
 
     public ConfigurationOperationalReadinessReporter(
@@ -35,8 +38,8 @@ public sealed class ConfigurationOperationalReadinessReporter : IOperationalRead
         SifenDbContext dbContext,
         ITenantSecretProvider secretProvider,
         ITenantCertificateValidator certificateValidator,
-        IFacturaXmlGenerator xmlGenerator,
-        IFacturaXmlPreSubmissionValidator xmlPreSubmissionValidator,
+        ISifenDeXsdValidator deXsdValidator,
+        IFiscalClock fiscalClock,
         IXmlDocumentSigner xmlDocumentSigner)
     {
         _configuration = configuration;
@@ -45,8 +48,8 @@ public sealed class ConfigurationOperationalReadinessReporter : IOperationalRead
         _dbContext = dbContext;
         _secretProvider = secretProvider;
         _certificateValidator = certificateValidator;
-        _xmlGenerator = xmlGenerator;
-        _xmlPreSubmissionValidator = xmlPreSubmissionValidator;
+        _deXsdValidator = deXsdValidator;
+        _fiscalClock = fiscalClock;
         _xmlDocumentSigner = xmlDocumentSigner;
     }
 
@@ -116,7 +119,6 @@ public sealed class ConfigurationOperationalReadinessReporter : IOperationalRead
         var now = _clock.UtcNow;
         var baseUrl = _configuration[$"Sifen:Environments:{environment}:BaseUrl"];
         var receivePath = _configuration[$"Sifen:Environments:{environment}:Wsdl:Receive"];
-        var xsdRootPath = _configuration["Sifen:XmlSchemas:Invoice01RootPath"];
         var transportCertificatePath = _configuration["Sifen:Transport:ClientCertificatePath"];
         var transportCertificatePasswordVariable = _configuration["Sifen:Transport:ClientCertificatePasswordEnvironmentVariable"];
 
@@ -172,9 +174,20 @@ public sealed class ConfigurationOperationalReadinessReporter : IOperationalRead
         var effectiveEndpoint = !string.IsNullOrWhiteSpace(sifenSettings?.EndpointUrl)
             ? sifenSettings.EndpointUrl
             : BuildConfiguredEndpoint(baseUrl, receivePath);
-        var effectiveXsdRootPath = !string.IsNullOrWhiteSpace(sifenSettings?.XmlSchemaRootPath)
-            ? sifenSettings.XmlSchemaRootPath
-            : xsdRootPath;
+        // Fase 4.3.1: la emision DE01 valida contra el paquete XSD v150 desplegado (no contra una ruta por tenant/config)
+        // y toma numeracion de FiscalStamp/NumberingSequence (no de TenantSifenSettings). El reporte evalua lo mismo, solo lectura.
+        var deXsdPackageProblem = await _deXsdValidator.CheckPackageAsync(cancellationToken);
+        var activities = taxpayerProfile is null
+            ? []
+            : await _dbContext.TaxpayerEconomicActivities
+                .AsNoTracking()
+                .IgnoreQueryFilters()
+                .Where(item => item.TenantId == tenantId && item.TaxpayerProfileId == taxpayerProfile.Id)
+                .OrderBy(item => item.SortOrder)
+                .ThenBy(item => item.Code)
+                .Select(item => new SifenDeEconomicActivity(item.Code, item.Description))
+                .ToListAsync(cancellationToken);
+        var numbering = await EvaluateNumberingAsync(tenantId, environment, cancellationToken);
 
         var monthlyLimitStatus = await BuildMonthlyLimitStatusAsync(tenant, now, cancellationToken);
         var cscCheck = sifenSettings is null
@@ -198,21 +211,22 @@ public sealed class ConfigurationOperationalReadinessReporter : IOperationalRead
             BuildCheck("SIGNATURE_CERTIFICATE_LOADED", latestCertificate is not null && certificateValidation.Checks.Any(check => check.Name == "certificate.pfx" && check.IsReady), latestCertificate is null ? "Signature certificate metadata is missing." : certificateValidation.Summary),
             BuildCheck("SIGNATURE_CERTIFICATE_VALID", latestCertificate is not null && certificateValidation.IsReady, latestCertificate is null ? "Signature certificate metadata is missing." : certificateValidation.Summary),
             BuildCheck("SECRET_REFERENCES_ONLY", UsesSecretReferencesOnly(sifenSettings, latestCertificate), UsesSecretReferencesOnly(sifenSettings, latestCertificate) ? "Secrets are stored by reference and are not exposed by this diagnostic." : "One or more tenant secret fields do not use a supported secret reference scheme."),
-            BuildCheck("ESTABLISHMENT_CONFIGURED", !string.IsNullOrWhiteSpace(sifenSettings?.EstablishmentCode), sifenSettings is null ? "Establishment cannot be validated because SIFEN settings are missing." : "Establishment code is configured."),
-            BuildCheck("EXPEDITION_POINT_CONFIGURED", !string.IsNullOrWhiteSpace(sifenSettings?.ExpeditionPointCode), sifenSettings is null ? "Expedition point cannot be validated because SIFEN settings are missing." : "Expedition point code is configured."),
-            BuildCheck("DOCUMENT_NUMBER_CONFIGURED", !string.IsNullOrWhiteSpace(sifenSettings?.CurrentDocumentNumber), sifenSettings is null ? "Current document number cannot be validated because SIFEN settings are missing." : "Current document number is configured."),
-            BuildCheck("XSD_ROOT_PATH_CONFIGURED", !string.IsNullOrWhiteSpace(effectiveXsdRootPath), string.IsNullOrWhiteSpace(effectiveXsdRootPath) ? "Invoice TipoDoc 01 XSD root path is missing." : "Invoice TipoDoc 01 XSD root path is configured."),
-            BuildCheck("XSD_ROOT_PATH_AVAILABLE", !string.IsNullOrWhiteSpace(effectiveXsdRootPath) && File.Exists(effectiveXsdRootPath), string.IsNullOrWhiteSpace(effectiveXsdRootPath) ? "Invoice TipoDoc 01 XSD root path is missing." : File.Exists(effectiveXsdRootPath) ? "Invoice TipoDoc 01 XSD root path exists." : "Invoice TipoDoc 01 XSD root path does not exist on disk."),
+            BuildCheck("ESTABLISHMENT_CONFIGURED", numbering.Sequence is not null, numbering.Sequence is null ? numbering.Message : "Establishment code is configured by the active numbering sequence."),
+            BuildCheck("EXPEDITION_POINT_CONFIGURED", numbering.Sequence is not null, numbering.Sequence is null ? numbering.Message : "Expedition point code is configured by the active numbering sequence."),
+            BuildCheck("DOCUMENT_NUMBER_CONFIGURED", numbering.Sequence is not null && numbering.Sequence.NextNumber <= NumberingSequence.MaxDocumentNumber, numbering.Sequence is null ? numbering.Message : numbering.Sequence.NextNumber <= NumberingSequence.MaxDocumentNumber ? "A valid fiscal stamp and numbering sequence are available (nothing was reserved)." : "The active numbering sequence is exhausted."),
+            BuildCheck("XSD_ROOT_PATH_CONFIGURED", deXsdPackageProblem is null, deXsdPackageProblem ?? "Official XSD v150 package is deployed."),
+            BuildCheck("XSD_ROOT_PATH_AVAILABLE", deXsdPackageProblem is null, deXsdPackageProblem ?? "Official XSD v150 package is available."),
             BuildTransportModeCheck(transportMode),
             BuildCheck("SIFEN_ENDPOINT_CONFIGURED", !string.IsNullOrWhiteSpace(effectiveEndpoint), !string.IsNullOrWhiteSpace(effectiveEndpoint) ? $"SIFEN endpoint is configured for {environment}." : $"SIFEN endpoint is missing for {environment}."),
             BuildTransportCertificateCheck(transportMode, transportCertificatePath, transportCertificatePasswordVariable)
         };
 
-        var sampleResult = await RunInternalValidationSampleAsync(
+        var sampleResult = await RunInternalValidationChecksAsync(
             tenantId,
             environment,
             taxpayerProfile,
-            sifenSettings,
+            activities,
+            deXsdPackageProblem,
             cancellationToken);
 
         checks.Add(sampleResult.BuilderCheck);
@@ -306,50 +320,42 @@ public sealed class ConfigurationOperationalReadinessReporter : IOperationalRead
                     latestError.FinalizedAt));
     }
 
-    private async Task<InternalValidationSampleResult> RunInternalValidationSampleAsync(
+    /// <summary>
+    /// Fase 4.3.1 - preparacion para el flujo DE01 sin construir ningun documento: no reserva numero, no calcula CDC,
+    /// no usa el generador legacy ni persiste nada. El emisor se evalua con el mismo mapper que usa la emision.
+    /// </summary>
+    private async Task<InternalValidationSampleResult> RunInternalValidationChecksAsync(
         Guid tenantId,
         SifenEnvironmentType environment,
         TaxpayerProfile? taxpayerProfile,
-        TenantSifenSettings? sifenSettings,
+        IReadOnlyList<SifenDeEconomicActivity> activities,
+        string? deXsdPackageProblem,
         CancellationToken cancellationToken)
     {
-        if (taxpayerProfile is null || sifenSettings is null)
+        TenantFeOperationalCheck builderCheck;
+        if (taxpayerProfile is null)
         {
-            return new InternalValidationSampleResult(
-                BuildCheck("XML_BUILDER_TYPEDOC01", false, "Internal TipoDoc 01 XML generation could not run because tenant fiscal configuration is incomplete."),
-                BuildCheck("XML_XSD_VALIDATION", false, "TipoDoc 01 XSD validation could not run because XML generation did not complete."),
-                BuildCheck("LOCAL_SIGNATURE_EXECUTION", false, "Local XML signature could not run because XML generation did not complete."));
+            builderCheck = BuildCheck("XML_BUILDER_TYPEDOC01", false, "DE01 emitter data cannot be evaluated because the tenant fiscal configuration is incomplete.");
+        }
+        else
+        {
+            try
+            {
+                SifenDeEmitterMapper.Map(taxpayerProfile, activities);
+                builderCheck = BuildCheck("XML_BUILDER_TYPEDOC01", true, "DE01 emitter data (gEmis/gActEco) is complete.");
+            }
+            catch (DomainException ex)
+            {
+                builderCheck = BuildCheck("XML_BUILDER_TYPEDOC01", false, ex.Message);
+            }
         }
 
-        GeneratedFacturaXmlResult? generated;
-        try
-        {
-            generated = _xmlGenerator.GenerateFacturaXML(BuildInternalValidationInput(taxpayerProfile, sifenSettings));
-        }
-        catch (Exception ex) when (ex is DomainException or InvalidOperationException)
-        {
-            return new InternalValidationSampleResult(
-                BuildCheck("XML_BUILDER_TYPEDOC01", false, $"Internal TipoDoc 01 XML generation failed: {ex.Message}"),
-                BuildCheck("XML_XSD_VALIDATION", false, "TipoDoc 01 XSD validation could not run because XML generation did not complete."),
-                BuildCheck("LOCAL_SIGNATURE_EXECUTION", false, "Local XML signature could not run because XML generation did not complete."));
-        }
+        var xsdCheck = BuildCheck(
+            "XML_XSD_VALIDATION",
+            deXsdPackageProblem is null,
+            deXsdPackageProblem ?? "Official XSD v150 package is deployed and compiles.");
 
-        var builderCheck = BuildCheck(
-            "XML_BUILDER_TYPEDOC01",
-            true,
-            "Internal TipoDoc 01 XML generation completed.");
-
-        TenantFeOperationalCheck xsdCheck;
-        try
-        {
-            await _xmlPreSubmissionValidator.ValidateTipoDoc01Async(generated.Xml, generated.Cdc, tenantId, environment, cancellationToken);
-            xsdCheck = BuildCheck("XML_XSD_VALIDATION", true, "TipoDoc 01 XML passed local XSD validation.");
-        }
-        catch (Exception ex) when (ex is DomainException or InvalidOperationException)
-        {
-            xsdCheck = BuildCheck("XML_XSD_VALIDATION", false, ex.Message);
-        }
-
+        // Prueba de capacidad de firma sobre un documento neutro (no es un DE ni un documento fiscal).
         TenantFeOperationalCheck signatureCheck;
         try
         {
@@ -357,8 +363,8 @@ public sealed class ConfigurationOperationalReadinessReporter : IOperationalRead
                 new SignXmlDocumentCommand(
                     tenantId,
                     environment,
-                    generated.Cdc,
-                    generated.Xml),
+                    "readiness-probe",
+                    "<readiness><probe Id=\"readiness-probe\" /></readiness>"),
                 cancellationToken);
 
             signatureCheck = BuildCheck("LOCAL_SIGNATURE_EXECUTION", true, "Local XML signature completed.");
@@ -371,36 +377,30 @@ public sealed class ConfigurationOperationalReadinessReporter : IOperationalRead
         return new InternalValidationSampleResult(builderCheck, xsdCheck, signatureCheck);
     }
 
-    private GenerateFacturaXmlInput BuildInternalValidationInput(
-        TaxpayerProfile taxpayerProfile,
-        TenantSifenSettings sifenSettings)
+    /// <summary>Solo lectura: mismas reglas de seleccion que EfNumberingService (un unico timbre/secuencia activos y vigentes).</summary>
+    private async Task<NumberingStatus> EvaluateNumberingAsync(
+        Guid tenantId,
+        SifenEnvironmentType environment,
+        CancellationToken cancellationToken)
     {
-        var issueDate = _clock.UtcNow;
-        return new GenerateFacturaXmlInput(
-            new Application.Cdc.GenerateCdcInput(
-                "01",
-                taxpayerProfile.RucNumber,
-                taxpayerProfile.RucCheckDigit,
-                sifenSettings.EstablishmentCode,
-                sifenSettings.ExpeditionPointCode,
-                sifenSettings.CurrentDocumentNumber,
-                (taxpayerProfile.TaxpayerType ?? 1).ToString(System.Globalization.CultureInfo.InvariantCulture),
-                "1",
-                Application.Security.SecurityCodeGenerator.Generate(sifenSettings.CurrentDocumentNumber),
-                issueDate.ToString("yyyyMMdd")),
-            issueDate,
-            1,
-            taxpayerProfile.LegalName,
-            "Internal validation address",
-            "Internal Validation Customer",
-            InvoiceReceiverDocumentType.Ci,
-            "1234567",
-            InvoiceCurrency.PYG,
-            InvoiceSaleCondition.Cash,
-            Application.Fiscal.FiscalCalculationEngine.Calculate(
-                [new Application.Fiscal.FiscalLineInput(1m, 10000m, InvoiceVatType.Vat10)],
-                "PYG"),
-            ["Internal validation item"]);
+        var today = _fiscalClock.Today;
+        var candidates = await (
+            from sequence in _dbContext.NumberingSequences.AsNoTracking().IgnoreQueryFilters()
+            join stamp in _dbContext.FiscalStamps.AsNoTracking().IgnoreQueryFilters() on sequence.FiscalStampId equals stamp.Id
+            where sequence.TenantId == tenantId &&
+                  sequence.Environment == environment &&
+                  sequence.DocumentTypeCode == FacturaDocumentTypeCode &&
+                  sequence.IsActive &&
+                  stamp.IsActive
+            select new { sequence, stamp }).ToListAsync(cancellationToken);
+
+        var valid = candidates.Where(item => item.stamp.IsValidOn(today)).ToList();
+        return valid.Count switch
+        {
+            0 => new NumberingStatus(null, $"No active fiscal stamp and numbering sequence for document type {FacturaDocumentTypeCode} in {environment} valid today."),
+            1 => new NumberingStatus(valid[0].sequence, string.Empty),
+            _ => new NumberingStatus(null, "More than one active numbering sequence exists; emission point selection is not implemented.")
+        };
     }
 
     private async Task<MonthlyLimitStatus> BuildMonthlyLimitStatusAsync(
@@ -693,6 +693,8 @@ public sealed class ConfigurationOperationalReadinessReporter : IOperationalRead
     }
 
     private sealed record MonthlyLimitStatus(bool IsReady, string Message);
+
+    private sealed record NumberingStatus(NumberingSequence? Sequence, string Message);
 
     private sealed record InternalValidationSampleResult(
         TenantFeOperationalCheck BuilderCheck,

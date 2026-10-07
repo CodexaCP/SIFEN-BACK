@@ -5,6 +5,7 @@ using SifenInvoicing.Application.Invoices;
 using SifenInvoicing.Application.Operations;
 using SifenInvoicing.Application.Security;
 using SifenInvoicing.Application.Tenancy;
+using SifenInvoicing.Application.XmlDe;
 using SifenInvoicing.Application.XmlSigning;
 using SifenInvoicing.Domain.Documents;
 using SifenInvoicing.Domain.Tenants;
@@ -107,20 +108,128 @@ public sealed class OperationalReadinessReporterTests
         Assert.Contains(diagnostic.Checks, item => item.Code == "TRANSPORT_CLIENT_CERTIFICATE_CONFIGURED" && item.Status == "Passed");
     }
 
+    // ---- Fase 4.3.1: readiness alineado con el flujo DE01 (solo lectura) ----
+
+    private static async Task<(Tenant Tenant, ITenantContextAccessor Accessor, SifenDbContext Db)> CompleteTenantAsync(
+        string slug, bool withActivity = true, bool withNumbering = true)
+    {
+        var tenant = Tenant.CreateSharedDatabaseTenant(slug, slug.ToUpperInvariant());
+        var accessor = CreateTenantAccessor(tenant.Id);
+        var db = CreateDbContext(accessor);
+        SeedBaseTenantData(db, tenant, withActivity, withNumbering);
+        db.TenantCertificateMetadata.Add(TenantCertificateMetadata.Create(
+            tenant.Id, SifenEnvironmentType.Test, CertificatePurpose.XmlSignature, "xml-signing", "CN=ACME", "ABC123", "123",
+            "config:certificate", "config:password", DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(30)));
+        await db.SaveChangesAsync();
+        return (tenant, accessor, db);
+    }
+
+    [Fact]
+    public async Task Readiness_ValidDe01Configuration_IsReported_AsReady_WithoutLegacyXsdPathOrSettingsNumbering()
+    {
+        var (tenant, accessor, db) = await CompleteTenantAsync("ready-de01");
+        await using var _ = db;
+        // Sin Invoice01RootPath ni ruta XSD por tenant, y con TenantSifenSettings sin relevancia para la numeracion.
+        var diagnostic = await CreateReporter(db, accessor).GetTenantFeDiagnosticAsync(tenant.Id, SifenEnvironmentType.Test);
+
+        Assert.True(diagnostic.ReadyForInternalValidation, string.Join("; ", diagnostic.Missing));
+        foreach (var code in new[] { "XML_BUILDER_TYPEDOC01", "XML_XSD_VALIDATION", "XSD_ROOT_PATH_AVAILABLE", "DOCUMENT_NUMBER_CONFIGURED", "ESTABLISHMENT_CONFIGURED", "EXPEDITION_POINT_CONFIGURED" })
+        {
+            Assert.Contains(diagnostic.Checks, item => item.Code == code && item.Status == "Passed");
+        }
+    }
+
+    [Fact]
+    public async Task Readiness_EmitterWithoutEconomicActivity_IsNotReady()
+    {
+        var (tenant, accessor, db) = await CompleteTenantAsync("no-activity", withActivity: false);
+        await using var _ = db;
+
+        var diagnostic = await CreateReporter(db, accessor).GetTenantFeDiagnosticAsync(tenant.Id, SifenEnvironmentType.Test);
+
+        Assert.False(diagnostic.ReadyForInternalValidation);
+        var check = Assert.Single(diagnostic.Checks, item => item.Code == "XML_BUILDER_TYPEDOC01");
+        Assert.Equal("Failed", check.Status);
+        Assert.Contains("gActEco", check.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Readiness_WithoutFiscalStampAndSequence_IsNotReady()
+    {
+        var (tenant, accessor, db) = await CompleteTenantAsync("no-numbering", withNumbering: false);
+        await using var _ = db;
+
+        var diagnostic = await CreateReporter(db, accessor).GetTenantFeDiagnosticAsync(tenant.Id, SifenEnvironmentType.Test);
+
+        Assert.False(diagnostic.ReadyForInternalValidation);
+        Assert.Contains(diagnostic.Checks, item => item.Code == "DOCUMENT_NUMBER_CONFIGURED" && item.Status == "Failed");
+    }
+
+    [Fact]
+    public async Task Readiness_WithoutDeployedXsdPackage_IsNotReady()
+    {
+        var (tenant, accessor, db) = await CompleteTenantAsync("no-xsd");
+        await using var _ = db;
+        var missing = new SifenInvoicing.Infrastructure.XmlValidation.SifenDeXsdValidator(
+            new SifenInvoicing.Infrastructure.XmlValidation.XmlSchemaValidator(),
+            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [SifenInvoicing.Infrastructure.XmlValidation.SifenDeXsdValidator.ConfigurationKey] = Path.Combine(Path.GetTempPath(), "no-such-xsd-" + Guid.NewGuid().ToString("N"))
+            }).Build());
+
+        var diagnostic = await CreateReporter(db, accessor, deXsdValidator: missing).GetTenantFeDiagnosticAsync(tenant.Id, SifenEnvironmentType.Test);
+
+        Assert.False(diagnostic.ReadyForInternalValidation);
+        Assert.Contains(diagnostic.Checks, item => item.Code == "XML_XSD_VALIDATION" && item.Status == "Failed");
+    }
+
+    [Fact]
+    public async Task Readiness_DoesNotReserveNumbersNorCreateAnyFiscalDocument()
+    {
+        var (tenant, accessor, db) = await CompleteTenantAsync("no-side-effects");
+        await using var _ = db;
+        var reporter = CreateReporter(db, accessor);
+        var sequenceBefore = await db.NumberingSequences.AsNoTracking().IgnoreQueryFilters().SingleAsync();
+
+        for (var i = 0; i < 3; i++)
+        {
+            await reporter.GetTenantFeDiagnosticAsync(tenant.Id, SifenEnvironmentType.Test);
+        }
+
+        db.ChangeTracker.Clear();
+        var sequenceAfter = await db.NumberingSequences.AsNoTracking().IgnoreQueryFilters().SingleAsync();
+        Assert.Equal(sequenceBefore.NextNumber, sequenceAfter.NextNumber);
+        Assert.Equal(sequenceBefore.Version, sequenceAfter.Version);
+        Assert.Empty(await db.Documents.IgnoreQueryFilters().ToListAsync());
+        Assert.Empty(await db.DocumentLines.IgnoreQueryFilters().ToListAsync());
+        Assert.Empty(await db.IdempotencyRecords.IgnoreQueryFilters().ToListAsync());
+        Assert.Empty(await db.DocumentLogs.IgnoreQueryFilters().ToListAsync());
+    }
+
+    [Fact]
+    public void Reporter_DoesNotDependOnTheLegacyXmlGeneratorOrValidator()
+    {
+        var parameterTypes = typeof(ConfigurationOperationalReadinessReporter).GetConstructors()
+            .Single().GetParameters().Select(p => p.ParameterType).ToArray();
+
+        Assert.DoesNotContain(typeof(IFacturaXmlGenerator), parameterTypes);
+        Assert.DoesNotContain(typeof(IFacturaXmlPreSubmissionValidator), parameterTypes);
+        Assert.Contains(typeof(ISifenDeXsdValidator), parameterTypes);
+    }
+
     private static ConfigurationOperationalReadinessReporter CreateReporter(
         SifenDbContext dbContext,
         ITenantContextAccessor tenantAccessor,
         string transportMode = "Diagnostic",
-        bool transportCertificateConfigured = false)
+        bool transportCertificateConfigured = false,
+        ISifenDeXsdValidator? deXsdValidator = null)
     {
-        var xsdPath = Path.GetTempFileName();
         var values = new Dictionary<string, string?>
         {
             ["Sifen:ActiveEnvironment"] = "Test",
             ["Sifen:Transport:Mode"] = transportMode,
             ["Sifen:Environments:Test:BaseUrl"] = "https://sifen-test.set.gov.py",
-            ["Sifen:Environments:Test:Wsdl:Receive"] = "/de/ws/sync/recibe.wsdl?wsdl",
-            ["Sifen:XmlSchemas:Invoice01RootPath"] = xsdPath
+            ["Sifen:Environments:Test:Wsdl:Receive"] = "/de/ws/sync/recibe.wsdl?wsdl"
         };
 
         if (transportCertificateConfigured)
@@ -140,8 +249,8 @@ public sealed class OperationalReadinessReporterTests
             dbContext,
             new ReadySecretProvider(),
             new ReadyCertificateValidator(),
-            new FacturaXmlGenerator(),
-            new PassThroughFacturaXmlPreSubmissionValidator(),
+            deXsdValidator ?? DeTestKit.Xsd(),
+            new TestFiscalClock(),
             new FakeXmlDocumentSigner());
     }
 
@@ -166,10 +275,21 @@ public sealed class OperationalReadinessReporterTests
         return new SifenDbContext(options, new SystemClock(), tenantAccessor);
     }
 
-    private static void SeedBaseTenantData(SifenDbContext dbContext, Tenant tenant)
+    private static void SeedBaseTenantData(SifenDbContext dbContext, Tenant tenant, bool withActivity = true, bool withNumbering = true)
     {
         dbContext.Tenants.Add(tenant);
-        dbContext.TaxpayerProfiles.Add(TaxpayerProfile.Create(tenant.Id, "80012345", "6", "ACME Paraguay SA"));
+        var taxpayer = TestFiscalSetup.Taxpayer(tenant.Id);
+        dbContext.TaxpayerProfiles.Add(taxpayer);
+        if (withActivity)
+        {
+            dbContext.TaxpayerEconomicActivities.Add(TestFiscalSetup.Activity(taxpayer));
+        }
+
+        if (withNumbering)
+        {
+            TestFiscalSetup.Seed(dbContext, tenant.Id, withTaxpayer: false);
+        }
+
         dbContext.TenantSifenSettings.Add(TenantSifenSettings.Create(
             tenant.Id,
             SifenEnvironmentType.Test,
@@ -223,13 +343,6 @@ public sealed class OperationalReadinessReporterTests
         return document;
     }
 
-    private sealed class PassThroughFacturaXmlPreSubmissionValidator : IFacturaXmlPreSubmissionValidator
-    {
-        public Task ValidateTipoDoc01Async(string xml, string cdc, Guid tenantId, SifenEnvironmentType environment, CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
-    }
 
     private sealed class FakeXmlDocumentSigner : IXmlDocumentSigner
     {

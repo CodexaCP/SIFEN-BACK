@@ -61,6 +61,26 @@ public sealed class SifenDeXsdValidator : ISifenDeXsdValidator
         throw new DomainException($"El DE01 generado no valida contra el XSD oficial v150 ({result.Errors.Count} errores): {details}");
     }
 
+    public async Task<string?> CheckPackageAsync(CancellationToken cancellationToken = default)
+    {
+        var rootPath = Path.Combine(_packageDirectory, RootSchemaFile);
+        if (!File.Exists(rootPath))
+        {
+            return $"El paquete XSD oficial v150 no esta desplegado en '{_packageDirectory}'.";
+        }
+
+        try
+        {
+            // Solo fuerza la carga/compilacion del paquete; el resultado de validar un documento vacio no se usa.
+            await _validator.ValidateAsync("<readiness/>", rootPath, cancellationToken);
+            return null;
+        }
+        catch (Exception ex) when (ex is System.Xml.XmlException or System.Xml.Schema.XmlSchemaException or IOException)
+        {
+            return $"El paquete XSD oficial v150 no pudo compilarse: {ex.Message}";
+        }
+    }
+
     /// <summary>Copia con Signature y gCamFuFD de relleno (solo para validar estructura).</summary>
     internal static string WithPlaceholders(string unsignedDeXml)
     {

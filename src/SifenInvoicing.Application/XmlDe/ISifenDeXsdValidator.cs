@@ -7,4 +7,10 @@ namespace SifenInvoicing.Application.XmlDe;
 public interface ISifenDeXsdValidator
 {
     Task EnsureValidAsync(string unsignedDeXml, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Comprobacion de preparacion sin documento: el paquete XSD v150 esta desplegado y compila. Devuelve null si esta
+    /// disponible o el motivo en caso contrario. No valida ni genera ningun DE.
+    /// </summary>
+    Task<string?> CheckPackageAsync(CancellationToken cancellationToken = default);
 }
