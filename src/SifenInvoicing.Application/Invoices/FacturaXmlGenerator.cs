@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Xml.Linq;
 using SifenInvoicing.Application.Cdc;
+using SifenInvoicing.Application.Fiscal;
 using SifenInvoicing.Domain.Common;
 
 namespace SifenInvoicing.Application.Invoices;
@@ -14,9 +15,14 @@ public sealed class FacturaXmlGenerator : IFacturaXmlGenerator
     {
         ArgumentNullException.ThrowIfNull(input);
 
-        if (input.Items is null || input.Items.Count == 0)
+        if (input.Fiscal is null || input.Fiscal.Lines.Count == 0)
         {
             throw new DomainException("At least one invoice item is required.");
+        }
+
+        if (input.ItemDescriptions is null || input.ItemDescriptions.Count != input.Fiscal.Lines.Count)
+        {
+            throw new DomainException("An item description is required for each fiscal line.");
         }
 
         if (input.SistemaFacturacion < 1)
@@ -54,15 +60,18 @@ public sealed class FacturaXmlGenerator : IFacturaXmlGenerator
         }
 
         var cdc = CdcGenerator.GenerateCDC(input.Cdc);
-        var items = input.Items.Select((item, index) => BuildItem(item, index + 1)).ToList();
-
-        var totalGravado10 = items.Where(item => item.VatType == InvoiceVatType.Vat10).Sum(item => item.Total);
-        var totalGravado5 = items.Where(item => item.VatType == InvoiceVatType.Vat5).Sum(item => item.Total);
-        var totalExento = items.Where(item => item.VatType == InvoiceVatType.Exempt).Sum(item => item.Total);
-        var totalIva10 = Round(totalGravado10 / 11m);
-        var totalIva5 = Round(totalGravado5 / 21m);
-        var totalIva = totalIva10 + totalIva5;
-        var totalGeneral = totalGravado10 + totalGravado5 + totalExento;
+        // Los montos vienen del FiscalCalculationEngine: este generador NO calcula nada fiscal.
+        var items = input.Fiscal.Lines
+            .Select((line, index) => BuildItem(line, input.ItemDescriptions[index], index + 1))
+            .ToList();
+        var totals = input.Fiscal.Totals;
+        var totalGravado10 = totals.Sub10;
+        var totalGravado5 = totals.Sub5;
+        var totalExento = totals.SubExento;
+        var totalIva10 = totals.Iva10;
+        var totalIva5 = totals.Iva5;
+        var totalIva = totals.TotalIva;
+        var totalGeneral = totals.TotalGeneral;
 
         var deElement = new XElement(Ns + "DE",
             new XAttribute("Id", cdc),
@@ -140,33 +149,17 @@ public sealed class FacturaXmlGenerator : IFacturaXmlGenerator
         return result;
     }
 
-    private static InvoiceItem BuildItem(GenerateFacturaXmlItemInput item, int index)
+    private static InvoiceItem BuildItem(FiscalLine line, string description, int index)
     {
-        ArgumentNullException.ThrowIfNull(item);
-        ValidateRequired(item.Description, nameof(item.Description));
-
-        if (item.Quantity <= 0)
-        {
-            throw new DomainException("Item quantity must be greater than zero.");
-        }
-
-        if (item.UnitPrice < 0)
-        {
-            throw new DomainException("Item unit price cannot be negative.");
-        }
-
-        if (!Enum.IsDefined(item.VatType))
-        {
-            throw new DomainException("Unsupported VAT type.");
-        }
+        ValidateRequired(description, nameof(description));
 
         return new InvoiceItem(
             $"ITEM-{index:000}",
-            item.Description.Trim(),
-            item.Quantity,
-            item.UnitPrice,
-            Round(item.Quantity * item.UnitPrice),
-            item.VatType);
+            description.Trim(),
+            line.Quantity,
+            line.UnitPrice,
+            line.TotalOperacion,
+            line.VatType);
     }
 
     private static object BuildReceiverDocument(InvoiceReceiverDocumentType type, string document)

@@ -12,6 +12,18 @@ public interface ITenantOnboardingService
         RegisterTaxpayerProfileCommand command,
         CancellationToken cancellationToken = default);
 
+    Task RegisterFiscalProfileAsync(
+        RegisterFiscalProfileCommand command,
+        CancellationToken cancellationToken = default);
+
+    Task RegisterFiscalStampAsync(
+        RegisterFiscalStampCommand command,
+        CancellationToken cancellationToken = default);
+
+    Task RegisterNumberingSequenceAsync(
+        RegisterNumberingSequenceCommand command,
+        CancellationToken cancellationToken = default);
+
     Task RegisterSifenSettingsAsync(
         RegisterSifenSettingsCommand command,
         CancellationToken cancellationToken = default);

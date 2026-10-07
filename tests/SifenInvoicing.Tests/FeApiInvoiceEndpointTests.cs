@@ -32,14 +32,6 @@ public sealed class FeApiInvoiceEndpointTests
         var result = await InvoiceEndpoints.CreateSimpleInvoiceAsync(
             new InvoiceEndpoints.CreateSimpleInvoiceRequest
             {
-                Environment = SifenEnvironmentType.Test,
-                DocumentType = "Factura electrónica",
-                EstablishmentCode = "001",
-                ExpeditionPointCode = "001",
-                DocumentNumber = "0000001",
-                SecurityCode = "123456789",
-                IssueDate = new DateOnly(2026, 4, 25),
-                EmisorDireccion = "Asuncion 123",
                 CurrencyCode = "PYG",
                 SaleCondition = "Contado",
                 ReceiverName = "Cliente Demo",
@@ -59,6 +51,7 @@ public sealed class FeApiInvoiceEndpointTests
                     }
                 ]
             },
+            Guid.NewGuid().ToString(),
             fixture.Service,
             CancellationToken.None);
 
@@ -76,8 +69,8 @@ public sealed class FeApiInvoiceEndpointTests
         Assert.Equal("0981000000", stored.ReceiverPhone);
         Assert.Equal("Observacion TEST", stored.Notes);
         Assert.Equal(100000m, stored.SubtotalAmount);
-        Assert.Equal(9090.91m, stored.Vat10Amount);
-        Assert.Equal(9090.91m, stored.TotalVatAmount);
+        Assert.Equal(9091m, stored.Vat10Amount); // PYG 0 decimales (politica provisoria [TEST])
+        Assert.Equal(9091m, stored.TotalVatAmount);
         Assert.Equal(FeInvoiceInternalStatus.DRAFT, stored.InternalStatus);
         Assert.Equal(1, storedLine.LineNumber);
         Assert.Equal(10, storedLine.VatRate);
@@ -95,14 +88,6 @@ public sealed class FeApiInvoiceEndpointTests
             InvoiceEndpoints.CreateSimpleInvoiceAsync(
                 new InvoiceEndpoints.CreateSimpleInvoiceRequest
                 {
-                    Environment = SifenEnvironmentType.Test,
-                    DocumentType = "Factura electrónica",
-                    EstablishmentCode = "001",
-                    ExpeditionPointCode = "001",
-                    DocumentNumber = "0000001",
-                    SecurityCode = "123456789",
-                    IssueDate = new DateOnly(2026, 4, 25),
-                    EmisorDireccion = "Asuncion 123",
                     CurrencyCode = "PYG",
                     ReceiverName = "",
                     ReceiverDocument = "",
@@ -117,6 +102,7 @@ public sealed class FeApiInvoiceEndpointTests
                         }
                     ]
                 },
+                Guid.NewGuid().ToString(),
                 fixture.Service,
                 CancellationToken.None));
 
@@ -132,14 +118,6 @@ public sealed class FeApiInvoiceEndpointTests
         await InvoiceEndpoints.CreateSimpleInvoiceAsync(
             new InvoiceEndpoints.CreateSimpleInvoiceRequest
             {
-                Environment = SifenEnvironmentType.Test,
-                DocumentType = "Factura electrónica",
-                EstablishmentCode = "001",
-                ExpeditionPointCode = "001",
-                DocumentNumber = "0000002",
-                SecurityCode = "123456789",
-                IssueDate = new DateOnly(2026, 4, 25),
-                EmisorDireccion = "Asuncion 123",
                 CurrencyCode = "PYG",
                 ReceiverName = "Cliente IVA",
                 ReceiverDocument = "80099999",
@@ -168,6 +146,7 @@ public sealed class FeApiInvoiceEndpointTests
                     }
                 ]
             },
+            Guid.NewGuid().ToString(),
             fixture.Service,
             CancellationToken.None);
 
@@ -193,14 +172,6 @@ public sealed class FeApiInvoiceEndpointTests
             InvoiceEndpoints.CreateSimpleInvoiceAsync(
                 new InvoiceEndpoints.CreateSimpleInvoiceRequest
                 {
-                    Environment = SifenEnvironmentType.Test,
-                    DocumentType = "Factura electrónica",
-                    EstablishmentCode = "001",
-                    ExpeditionPointCode = "001",
-                    DocumentNumber = "0000003",
-                    SecurityCode = "123456789",
-                    IssueDate = new DateOnly(2026, 4, 25),
-                    EmisorDireccion = "Asuncion 123",
                     CurrencyCode = "PYG",
                     ReceiverName = "Cliente Demo",
                     ReceiverDocument = "80099999",
@@ -215,6 +186,7 @@ public sealed class FeApiInvoiceEndpointTests
                         }
                     ]
                 },
+                Guid.NewGuid().ToString(),
                 fixture.Service,
                 CancellationToken.None));
 
@@ -315,7 +287,7 @@ public sealed class FeApiInvoiceEndpointTests
 
         var dbContext = new SifenDbContext(options, new SystemClock(), tenantAccessor);
         dbContext.Tenants.Add(tenant);
-        dbContext.TaxpayerProfiles.Add(TaxpayerProfile.Create(tenant.Id, "80012345", "6", "ACME Paraguay SA"));
+        TestFiscalSetup.Seed(dbContext, tenant.Id);
         dbContext.TenantCertificateMetadata.Add(TenantCertificateMetadata.Create(
             tenant.Id,
             SifenEnvironmentType.Test,
@@ -343,7 +315,9 @@ public sealed class FeApiInvoiceEndpointTests
             new FakeResponseParser(),
             CreateConfiguration(),
             new NullAuditTrail(),
-            new SystemClock());
+            new SystemClock(),
+            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
+            new TestFiscalClock());
 
         return new TestFixture(tenant.Id, tenantAccessor, dbContext, service);
     }

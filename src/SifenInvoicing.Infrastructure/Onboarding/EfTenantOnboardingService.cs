@@ -90,6 +90,106 @@ public sealed class EfTenantOnboardingService : ITenantOnboardingService
         await RecordAuditAsync("tenant.taxpayer_profile.registered", command.TenantId, command.TenantId, "Registered", cancellationToken);
     }
 
+    public async Task RegisterFiscalProfileAsync(
+        RegisterFiscalProfileCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureTenantExistsAsync(command.TenantId, cancellationToken);
+
+        var profile = await _dbContext.TaxpayerProfiles.IgnoreQueryFilters()
+            .Where(item => item.TenantId == command.TenantId && item.IsActive)
+            .OrderByDescending(item => item.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new InvalidOperationException("Taxpayer profile must be registered before its fiscal data.");
+
+        profile.UpdateFiscalData(
+            command.TaxpayerType,
+            command.Address,
+            command.HouseNumber,
+            command.DepartmentCode,
+            command.DepartmentDescription,
+            command.DistrictCode,
+            command.DistrictDescription,
+            command.CityCode,
+            command.CityDescription,
+            command.Phone,
+            command.Email);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        await RecordAuditAsync("tenant.fiscal_profile.registered", command.TenantId, command.TenantId, "Registered", cancellationToken);
+    }
+
+    public async Task RegisterFiscalStampAsync(
+        RegisterFiscalStampCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureTenantExistsAsync(command.TenantId, cancellationToken);
+
+        var exists = await _dbContext.FiscalStamps.IgnoreQueryFilters().AnyAsync(
+            item => item.TenantId == command.TenantId &&
+                    item.Environment == command.Environment &&
+                    item.StampingNumber == command.StampingNumber,
+            cancellationToken);
+
+        if (exists)
+        {
+            throw new InvalidOperationException("Fiscal stamp already exists for this tenant and environment.");
+        }
+
+        _dbContext.FiscalStamps.Add(FiscalStamp.Create(
+            command.TenantId,
+            command.Environment,
+            command.StampingNumber,
+            command.ValidFrom,
+            command.ValidTo));
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        await RecordAuditAsync("tenant.fiscal_stamp.registered", command.TenantId, command.TenantId, "Registered", cancellationToken);
+    }
+
+    public async Task RegisterNumberingSequenceAsync(
+        RegisterNumberingSequenceCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureTenantExistsAsync(command.TenantId, cancellationToken);
+
+        var stamp = await _dbContext.FiscalStamps.IgnoreQueryFilters().FirstOrDefaultAsync(
+            item => item.TenantId == command.TenantId &&
+                    item.Environment == command.Environment &&
+                    item.StampingNumber == command.StampingNumber,
+            cancellationToken)
+            ?? throw new InvalidOperationException("Fiscal stamp was not found for this tenant and environment.");
+
+        var sequence = NumberingSequence.Create(
+            command.TenantId,
+            command.Environment,
+            stamp.Id,
+            command.DocumentTypeCode,
+            command.EstablishmentCode,
+            command.ExpeditionPointCode,
+            command.Series,
+            command.FirstNumber);
+
+        var exists = await _dbContext.NumberingSequences.IgnoreQueryFilters().AnyAsync(
+            item => item.TenantId == command.TenantId &&
+                    item.Environment == command.Environment &&
+                    item.FiscalStampId == stamp.Id &&
+                    item.DocumentTypeCode == sequence.DocumentTypeCode &&
+                    item.EstablishmentCode == sequence.EstablishmentCode &&
+                    item.ExpeditionPointCode == sequence.ExpeditionPointCode &&
+                    item.Series == sequence.Series,
+            cancellationToken);
+
+        if (exists)
+        {
+            throw new InvalidOperationException("Numbering sequence already exists for this stamp, document type, establishment and expedition point.");
+        }
+
+        _dbContext.NumberingSequences.Add(sequence);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        await RecordAuditAsync("tenant.numbering_sequence.registered", command.TenantId, command.TenantId, "Registered", cancellationToken);
+    }
+
     public async Task RegisterSifenSettingsAsync(
         RegisterSifenSettingsCommand command,
         CancellationToken cancellationToken = default)

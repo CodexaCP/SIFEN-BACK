@@ -384,9 +384,9 @@ public sealed class ConfigurationOperationalReadinessReporter : IOperationalRead
                 sifenSettings.EstablishmentCode,
                 sifenSettings.ExpeditionPointCode,
                 sifenSettings.CurrentDocumentNumber,
+                (taxpayerProfile.TaxpayerType ?? 1).ToString(System.Globalization.CultureInfo.InvariantCulture),
                 "1",
-                "1",
-                "123456789",
+                Application.Security.SecurityCodeGenerator.Generate(sifenSettings.CurrentDocumentNumber),
                 issueDate.ToString("yyyyMMdd")),
             issueDate,
             1,
@@ -397,7 +397,10 @@ public sealed class ConfigurationOperationalReadinessReporter : IOperationalRead
             "1234567",
             InvoiceCurrency.PYG,
             InvoiceSaleCondition.Cash,
-            [new GenerateFacturaXmlItemInput("Internal validation item", 1m, 10000m, InvoiceVatType.Vat10)]);
+            Application.Fiscal.FiscalCalculationEngine.Calculate(
+                [new Application.Fiscal.FiscalLineInput(1m, 10000m, InvoiceVatType.Vat10)],
+                "PYG"),
+            ["Internal validation item"]);
     }
 
     private async Task<MonthlyLimitStatus> BuildMonthlyLimitStatusAsync(

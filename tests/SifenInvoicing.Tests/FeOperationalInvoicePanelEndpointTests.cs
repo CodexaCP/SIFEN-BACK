@@ -262,7 +262,9 @@ public sealed class FeOperationalInvoicePanelEndpointTests
             new FakeResponseParser(),
             CreateConfiguration(),
             new NullAuditTrail(),
-            new SystemClock());
+            new SystemClock(),
+            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
+            new TestFiscalClock());
 
         return new EndpointFixture(tenantA, tenantB, tenantAccessor, dbContext, invoiceService);
     }

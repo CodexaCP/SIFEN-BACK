@@ -160,6 +160,9 @@ public sealed class SifenDocumentConfiguration : IEntityTypeConfiguration<SifenD
         builder.Property(entity => entity.RawSifenResponse)
             .HasColumnType("nvarchar(max)");
 
+        builder.Property(entity => entity.StampingNumber)
+            .HasMaxLength(8);
+
         builder.HasIndex(entity => new { entity.TenantId, entity.Cdc })
             .IsUnique();
 
@@ -168,11 +171,13 @@ public sealed class SifenDocumentConfiguration : IEntityTypeConfiguration<SifenD
                 entity.TenantId,
                 entity.Environment,
                 entity.Kind,
+                entity.StampingNumber,
                 entity.EstablishmentCode,
                 entity.ExpeditionPointCode,
                 entity.ExternalDocumentNumber
             })
-            .IsUnique();
+            .IsUnique()
+            .HasFilter(null);
 
         builder.HasOne<Tenant>()
             .WithMany()

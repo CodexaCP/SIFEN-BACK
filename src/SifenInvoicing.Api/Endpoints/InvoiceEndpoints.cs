@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using SifenInvoicing.Api.Auth;
 using SifenInvoicing.Application.Invoices;
 using SifenInvoicing.Application.Operations;
-using SifenInvoicing.Application.Security;
 using SifenInvoicing.Application.Tenancy;
 using SifenInvoicing.Domain.Tenants;
 using SifenInvoicing.Infrastructure.Invoices;
@@ -12,6 +11,8 @@ namespace SifenInvoicing.Api.Endpoints;
 
 public static class InvoiceEndpoints
 {
+    public const string IdempotencyKeyHeader = "Idempotency-Key";
+
     public static IEndpointRouteBuilder MapInvoiceEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapPost("/api/fe/invoices", CreateSimpleInvoiceAsync)
@@ -80,11 +81,12 @@ public static class InvoiceEndpoints
 
         group.MapPost("/", async (
             CreateInvoiceRequest request,
+            [Microsoft.AspNetCore.Mvc.FromHeader(Name = IdempotencyKeyHeader)] string? idempotencyKey,
             IInvoiceService invoiceService,
             CancellationToken cancellationToken) =>
         {
             var result = await invoiceService.CreateAsync(
-                BuildCreateInvoiceCommand(request),
+                BuildCreateInvoiceCommand(request, idempotencyKey),
                 cancellationToken);
 
             return Results.Created($"/invoice/{result.Id}", result);
@@ -151,13 +153,14 @@ public static class InvoiceEndpoints
 
     public static async Task<IResult> CreateSimpleInvoiceAsync(
         CreateSimpleInvoiceRequest request,
+        [Microsoft.AspNetCore.Mvc.FromHeader(Name = IdempotencyKeyHeader)] string? idempotencyKey,
         IInvoiceService invoiceService,
         CancellationToken cancellationToken)
     {
         ValidateSimpleRequest(request);
 
         var result = await invoiceService.CreateAsync(
-            BuildCreateInvoiceCommand(request),
+            BuildCreateInvoiceCommand(request, idempotencyKey),
             cancellationToken);
 
         return Results.Created($"/invoice/{result.Id}", result);
@@ -443,16 +446,13 @@ public static class InvoiceEndpoints
                 $"fe-{invoice.ExternalDocumentNumber}.xml");
     }
 
+    /// <summary>
+    /// Solo datos comerciales. Los campos fiscales (ambiente, timbrado, establecimiento, punto, numero,
+    /// codigo de seguridad, CDC, tipo de contribuyente/emision, fecha, emisor) los decide el backend;
+    /// si el cliente los envia se ignoran.
+    /// </summary>
     public class CreateInvoiceRequest
     {
-        public Domain.Tenants.SifenEnvironmentType Environment { get; init; } = SifenEnvironmentType.Test;
-        public string? DocumentType { get; init; }
-        public string? EstablishmentCode { get; init; }
-        public string? ExpeditionPointCode { get; init; }
-        public string? DocumentNumber { get; init; }
-        public string? SecurityCode { get; init; }
-        public DateOnly IssueDate { get; init; }
-        public string? EmisorDireccion { get; init; }
         public string? Notes { get; init; }
         public string? ReceiverName { get; init; }
         public string? ReceiverDocument { get; init; }
@@ -466,10 +466,6 @@ public static class InvoiceEndpoints
         public InvoiceCurrency? Currency { get; init; }
         public string? SaleCondition { get; init; }
         public InvoiceSaleCondition? LegacySaleCondition { get; init; }
-        public int SistemaFacturacion { get; init; } = 1;
-        public string? TipoContribuyente { get; init; }
-        public string? TipoEmision { get; init; }
-        public decimal? Total { get; init; }
         public SimpleInvoiceCustomerRequest? Customer { get; init; }
         public IReadOnlyCollection<CreateInvoiceItemRequest> Items { get; init; } = [];
     }
@@ -523,10 +519,7 @@ public static class InvoiceEndpoints
         }
     }
 
-    private static string NumericOrZero(string? value) =>
-        !string.IsNullOrWhiteSpace(value) && value.Trim().All(char.IsAsciiDigit) ? value.Trim() : "0";
-
-    private static CreateInvoiceCommand BuildCreateInvoiceCommand(CreateInvoiceRequest request)
+    private static CreateInvoiceCommand BuildCreateInvoiceCommand(CreateInvoiceRequest request, string? idempotencyKey)
     {
         var receiverName = request.ReceiverName ?? request.Customer?.Name ?? request.ReceptorNombre ?? string.Empty;
         var receiverDocument = request.ReceiverDocument ?? request.Customer?.DocumentNumber ?? request.ReceptorDocumento ?? string.Empty;
@@ -535,15 +528,7 @@ public static class InvoiceEndpoints
             ?? InferReceiverDocumentType(receiverDocument);
 
         return new CreateInvoiceCommand(
-            request.Environment,
-            request.DocumentType ?? "Factura electrónica",
-            request.EstablishmentCode ?? string.Empty,
-            request.ExpeditionPointCode ?? string.Empty,
-            request.DocumentNumber ?? string.Empty,
-            // El codigo de seguridad lo decide siempre el servidor (Manual v150 B004); se ignora el del cliente.
-            SecurityCodeGenerator.Generate(NumericOrZero(request.DocumentNumber)),
-            request.IssueDate,
-            request.EmisorDireccion ?? "TEST INTERNAL",
+            idempotencyKey?.Trim() ?? string.Empty,
             request.Notes,
             receiverName,
             receiverType,
@@ -553,9 +538,6 @@ public static class InvoiceEndpoints
             request.ReceiverPhone,
             ParseCurrency(request.CurrencyCode, request.Currency),
             ParseSaleCondition(request.SaleCondition, request.LegacySaleCondition),
-            request.SistemaFacturacion <= 0 ? 1 : request.SistemaFacturacion,
-            string.IsNullOrWhiteSpace(request.TipoContribuyente) ? "1" : request.TipoContribuyente.Trim(),
-            string.IsNullOrWhiteSpace(request.TipoEmision) ? "1" : request.TipoEmision.Trim(),
             request.Items.Select(BuildCreateInvoiceItemCommand).ToArray());
     }
 

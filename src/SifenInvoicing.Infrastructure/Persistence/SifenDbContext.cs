@@ -8,7 +8,7 @@ using SifenInvoicing.Domain.Tenants;
 
 namespace SifenInvoicing.Infrastructure.Persistence;
 
-public sealed class SifenDbContext : DbContext
+public class SifenDbContext : DbContext
 {
     private readonly ISystemClock _clock;
     private readonly ITenantContextAccessor _tenantContextAccessor;
@@ -45,6 +45,12 @@ public sealed class SifenDbContext : DbContext
 
     public DbSet<FeTenantLog> FeTenantLogs => Set<FeTenantLog>();
 
+    public DbSet<FiscalStamp> FiscalStamps => Set<FiscalStamp>();
+
+    public DbSet<NumberingSequence> NumberingSequences => Set<NumberingSequence>();
+
+    public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
+
     public DbSet<PlatformRole> PlatformRoles => Set<PlatformRole>();
 
     public DbSet<PlatformUser> PlatformUsers => Set<PlatformUser>();
@@ -64,6 +70,12 @@ public sealed class SifenDbContext : DbContext
         modelBuilder.Entity<TenantCertificateMetadata>().HasQueryFilter(entity =>
             CurrentTenantGuid != Guid.Empty && entity.TenantId == CurrentTenantGuid);
         modelBuilder.Entity<TenantKudeTemplateSettings>().HasQueryFilter(entity =>
+            CurrentTenantGuid != Guid.Empty && entity.TenantId == CurrentTenantGuid);
+        modelBuilder.Entity<FiscalStamp>().HasQueryFilter(entity =>
+            CurrentTenantGuid != Guid.Empty && entity.TenantId == CurrentTenantGuid);
+        modelBuilder.Entity<NumberingSequence>().HasQueryFilter(entity =>
+            CurrentTenantGuid != Guid.Empty && entity.TenantId == CurrentTenantGuid);
+        modelBuilder.Entity<IdempotencyRecord>().HasQueryFilter(entity =>
             CurrentTenantGuid != Guid.Empty && entity.TenantId == CurrentTenantGuid);
         modelBuilder.Entity<SifenDocument>().HasQueryFilter(entity =>
             CurrentTenantGuid != Guid.Empty && entity.TenantId == CurrentTenantGuid);

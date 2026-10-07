@@ -27,6 +27,17 @@ public sealed class TaxpayerProfileConfiguration : IEntityTypeConfiguration<Taxp
         builder.Property(entity => entity.TradeName)
             .HasMaxLength(250);
 
+        builder.Property(entity => entity.Address).HasMaxLength(255);
+        builder.Property(entity => entity.HouseNumber).HasMaxLength(20);
+        builder.Property(entity => entity.DepartmentCode).HasMaxLength(10);
+        builder.Property(entity => entity.DepartmentDescription).HasMaxLength(60);
+        builder.Property(entity => entity.DistrictCode).HasMaxLength(10);
+        builder.Property(entity => entity.DistrictDescription).HasMaxLength(60);
+        builder.Property(entity => entity.CityCode).HasMaxLength(10);
+        builder.Property(entity => entity.CityDescription).HasMaxLength(60);
+        builder.Property(entity => entity.Phone).HasMaxLength(20);
+        builder.Property(entity => entity.Email).HasMaxLength(80);
+
         builder.HasIndex(entity => new { entity.TenantId, entity.RucNumber, entity.RucCheckDigit })
             .IsUnique();
 

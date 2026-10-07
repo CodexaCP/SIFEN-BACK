@@ -22,10 +22,8 @@ public sealed class FacturaXmlGeneratorTests
             "80099999",
             InvoiceCurrency.PYG,
             InvoiceSaleCondition.Cash,
-            [
-                new GenerateFacturaXmlItemInput("Servicio mensual", 2, 100000m, InvoiceVatType.Vat10),
-                new GenerateFacturaXmlItemInput("Producto exento", 1, 50000m, InvoiceVatType.Exempt)
-            ]);
+            TestFiscal.Model(("Servicio mensual", 2m, 100000m, InvoiceVatType.Vat10), ("Producto exento", 1m, 50000m, InvoiceVatType.Exempt)),
+            TestFiscal.Descriptions(("Servicio mensual", 2m, 100000m, InvoiceVatType.Vat10), ("Producto exento", 1m, 50000m, InvoiceVatType.Exempt)));
 
         var result = generator.GenerateFacturaXML(input);
         var xml = XDocument.Parse(result.Xml);
@@ -40,7 +38,7 @@ public sealed class FacturaXmlGeneratorTests
         Assert.Equal(200000m, result.TotalGravado10);
         Assert.Equal(0m, result.TotalGravado5);
         Assert.Equal(50000m, result.TotalExento);
-        Assert.Equal(18181.82m, result.TotalIva);
+        Assert.Equal(18182m, result.TotalIva);
     }
 
     [Fact]
@@ -58,9 +56,8 @@ public sealed class FacturaXmlGeneratorTests
             "1234567",
             InvoiceCurrency.USD,
             InvoiceSaleCondition.Credit,
-            [
-                new GenerateFacturaXmlItemInput("Servicio USD", 1, 100m, InvoiceVatType.Vat5)
-            ]);
+            TestFiscal.Model(("Servicio USD", 1m, 100m, InvoiceVatType.Vat5)),
+            TestFiscal.Descriptions(("Servicio USD", 1m, 100m, InvoiceVatType.Vat5)));
 
         var result = generator.GenerateFacturaXML(input);
         var xml = XDocument.Parse(result.Xml);
@@ -70,7 +67,7 @@ public sealed class FacturaXmlGeneratorTests
         Assert.Equal("2", xml.Root.Element(ns + "DE")!.Element(ns + "gCamFE")!.Element(ns + "iCondOpe")!.Value);
         Assert.Equal("1234567", xml.Root.Element(ns + "DE")!.Element(ns + "gDatGralOpe")!.Element(ns + "gReceptor")!.Element(ns + "dNumIDRec")!.Value);
         Assert.Equal(100m, result.TotalGravado5);
-        Assert.Equal(4.76m, result.TotalIva);
+        Assert.Equal(5m, result.TotalIva);
     }
 
     [Fact]
@@ -88,6 +85,7 @@ public sealed class FacturaXmlGeneratorTests
             "80099999",
             InvoiceCurrency.PYG,
             InvoiceSaleCondition.Cash,
+            TestFiscal.Model(("x", 1m, 1m, InvoiceVatType.Vat10)) with { Lines = [] },
             []);
 
         Assert.Throws<DomainException>(() => generator.GenerateFacturaXML(input));
@@ -108,9 +106,8 @@ public sealed class FacturaXmlGeneratorTests
             "80099999",
             InvoiceCurrency.PYG,
             InvoiceSaleCondition.Cash,
-            [
-                new GenerateFacturaXmlItemInput("Servicio mensual", 1, 100000m, InvoiceVatType.Vat10)
-            ]);
+            TestFiscal.Model(("Servicio mensual", 1m, 100000m, InvoiceVatType.Vat10)),
+            TestFiscal.Descriptions(("Servicio mensual", 1m, 100000m, InvoiceVatType.Vat10)));
 
         var exception = Assert.Throws<DomainException>(() => generator.GenerateFacturaXML(input));
 

@@ -135,14 +135,7 @@ public sealed class InvoiceKudePdfTests
     private static async Task<Guid> CreateInvoiceAsync(IInvoiceService service)
     {
         var result = await service.CreateAsync(new CreateInvoiceCommand(
-            SifenEnvironmentType.Test,
-            "Factura electrónica",
-            "001",
-            "001",
-            "0000001",
-            "123456789",
-            new DateOnly(2026, 4, 25),
-            "Asuncion 123",
+            Guid.NewGuid().ToString(),
             null,
             "Cliente Demo",
             InvoiceReceiverDocumentType.Ruc,
@@ -152,9 +145,6 @@ public sealed class InvoiceKudePdfTests
             null,
             InvoiceCurrency.PYG,
             InvoiceSaleCondition.Cash,
-            1,
-            "1",
-            "1",
             [
                 new CreateInvoiceItemCommand("Servicio mensual", 1, 100000m, 10)
             ]));
@@ -181,7 +171,7 @@ public sealed class InvoiceKudePdfTests
 
         var dbContext = new SifenDbContext(options, new SystemClock(), tenantAccessor);
         dbContext.Tenants.Add(tenant);
-        dbContext.TaxpayerProfiles.Add(TaxpayerProfile.Create(tenant.Id, "80012345", "6", "ACME Paraguay SA"));
+        TestFiscalSetup.Seed(dbContext, tenant.Id);
         dbContext.TenantCertificateMetadata.Add(TenantCertificateMetadata.Create(
             tenant.Id,
             SifenEnvironmentType.Test,
@@ -213,7 +203,9 @@ public sealed class InvoiceKudePdfTests
              new FakeResponseParser(),
              CreateConfiguration(),
              new NullAuditTrail(),
-             new SystemClock()));
+             new SystemClock(),
+             new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
+             new TestFiscalClock()));
     }
 
     private static void SetTenant(ITenantContextAccessor tenantAccessor, Guid tenantId)

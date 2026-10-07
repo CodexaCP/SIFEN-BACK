@@ -27,6 +27,11 @@ using SifenInvoicing.Infrastructure.Tenancy;
 using SifenInvoicing.Infrastructure.XmlSigning;
 using SifenInvoicing.Infrastructure.XmlValidation;
 
+using SifenInvoicing.Application.Fiscal;
+using SifenInvoicing.Application.Numbering;
+using SifenInvoicing.Infrastructure.Fiscal;
+using SifenInvoicing.Infrastructure.Numbering;
+
 namespace SifenInvoicing.Infrastructure;
 
 public static class DependencyInjection
@@ -49,6 +54,8 @@ public static class DependencyInjection
         services.AddScoped<IFacturaXmlPreSubmissionValidator, FacturaXmlPreSubmissionValidator>();
         services.AddScoped<IInvoiceKudePdfRenderer, InvoiceKudePdfRenderer>();
         services.AddScoped<IInvoiceService, EfInvoiceService>();
+        services.AddScoped<INumberingService, EfNumberingService>();
+        services.AddSingleton<IFiscalClock, OffsetFiscalClock>();
         services.AddScoped<IFeTraceService, EfFeTraceService>();
         services.AddScoped<IFeInvoiceTestFlowService, EfFeInvoiceTestFlowService>();
         services.AddScoped<ISifenSoapTransport, DefaultSifenSoapTransport>();

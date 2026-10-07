@@ -2,9 +2,13 @@ using System.Text.Json;
 using System.Security.Cryptography;
 using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
 using SifenInvoicing.Application.Auditing;
+using SifenInvoicing.Application.Cdc;
 using SifenInvoicing.Application.Diagnostics;
+using SifenInvoicing.Application.Fiscal;
+using SifenInvoicing.Application.Numbering;
 using SifenInvoicing.Application.Invoices;
 using SifenInvoicing.Application.Operations;
 using SifenInvoicing.Application.Security;
@@ -22,16 +26,10 @@ public sealed class EfInvoiceService : IInvoiceService
 {
     private const string UnsignedLocalValidationMessage = "XML generated locally. Certificate/XSD/CSC are missing for full validation.";
 
-    private sealed record InvoiceLineCalculation(
-        int LineNumber,
-        string Description,
-        decimal Quantity,
-        decimal UnitPrice,
-        int VatRate,
-        decimal VatAmount,
-        decimal ExemptAmount,
-        decimal SubtotalAmount,
-        decimal TotalAmount);
+    /// <summary>Manual v150: iTiDE 01 = factura electronica; iTipEmi 1 = emision normal.</summary>
+    private const string FacturaDocumentTypeCode = "01";
+    private const string NormalEmissionType = "1";
+    private const string FacturaDocumentTypeName = "Factura electrónica";
 
     private readonly SifenDbContext _dbContext;
     private readonly ITenantContextAccessor _tenantContextAccessor;
@@ -46,6 +44,8 @@ public sealed class EfInvoiceService : IInvoiceService
     private readonly IConfiguration _configuration;
     private readonly IAuditTrail _auditTrail;
     private readonly ISystemClock _clock;
+    private readonly INumberingService _numberingService;
+    private readonly IFiscalClock _fiscalClock;
 
     public EfInvoiceService(
         SifenDbContext dbContext,
@@ -60,7 +60,9 @@ public sealed class EfInvoiceService : IInvoiceService
         ISifenResponseParser responseParser,
         IConfiguration configuration,
         IAuditTrail auditTrail,
-        ISystemClock clock)
+        ISystemClock clock,
+        INumberingService numberingService,
+        IFiscalClock fiscalClock)
     {
         _dbContext = dbContext;
         _tenantContextAccessor = tenantContextAccessor;
@@ -75,6 +77,8 @@ public sealed class EfInvoiceService : IInvoiceService
         _configuration = configuration;
         _auditTrail = auditTrail;
         _clock = clock;
+        _numberingService = numberingService;
+        _fiscalClock = fiscalClock;
     }
 
     public async Task<CreateInvoiceResult> CreateAsync(
@@ -83,10 +87,22 @@ public sealed class EfInvoiceService : IInvoiceService
     {
         ArgumentNullException.ThrowIfNull(command);
 
+        // 1. Autenticacion/tenant (ya resuelto por la identidad) y validacion de datos comerciales.
         var tenantId = RequireTenant();
-        var tenant = await RequireTenantForEmissionAsync(tenantId, cancellationToken);
-        var tenantSettings = await GetTenantSifenSettingsAsync(tenantId, command.Environment, cancellationToken);
         ValidateCommand(command);
+
+        // 2. Idempotency-Key: mismo contenido => misma factura; distinto contenido => 422.
+        var requestHash = command.ComputeRequestHash();
+        var replay = await TryReplayAsync(tenantId, command.IdempotencyKey, requestHash, cancellationToken);
+        if (replay is not null)
+        {
+            return replay;
+        }
+
+        // 3. Configuracion fiscal del tenant.
+        var environment = ResolveEnvironment();
+        var tenant = await RequireTenantForEmissionAsync(tenantId, cancellationToken);
+        var tenantSettings = await GetTenantSifenSettingsAsync(tenantId, environment, cancellationToken);
         await EnsureTenantInvoicePlanAllowsEmissionAsync(tenant, cancellationToken);
 
         var taxpayer = await _dbContext.TaxpayerProfiles
@@ -98,100 +114,185 @@ public sealed class EfInvoiceService : IInvoiceService
             throw new DomainException("Active taxpayer profile was not found for the current tenant.");
         }
 
-        var diagnostic = await EnsureSubmissionIsAllowedAsync(tenantId, command.Environment, cancellationToken);
+        if (taxpayer.TaxpayerType is null || string.IsNullOrWhiteSpace(taxpayer.Address))
+        {
+            throw new UserFacingException(
+                "FISCAL_CONFIGURATION_INCOMPLETE",
+                "Configuration",
+                "Faltan datos fiscales del emisor (tipo de contribuyente o direccion).",
+                "Completa el perfil fiscal de la empresa antes de emitir.",
+                false,
+                422,
+                "Taxpayer profile is missing TaxpayerType or Address.");
+        }
+
+        var diagnostic = await EnsureSubmissionIsAllowedAsync(tenantId, environment, cancellationToken);
         var allowUnsignedLocalValidationOverride = IsUnsignedLocalValidationOverrideEnabled(diagnostic.TransportMode);
         var requiresUnsignedLocalDraft = RequiresUnsignedLocalDraft(diagnostic, allowUnsignedLocalValidationOverride);
         var canSignLocally = await CanSignXmlLocallyAsync(
             tenantId,
-            command.Environment,
+            environment,
             allowUnsignedLocalValidationOverride,
             cancellationToken);
 
-        var effectiveCommand = ApplyTenantSettings(command, tenantSettings);
-        var lineCalculations = BuildLineCalculations(effectiveCommand.Items);
-        var subtotalAmount = lineCalculations.Sum(item => item.SubtotalAmount);
-        var vat5Amount = lineCalculations.Sum(item => item.VatRate == 5 ? item.VatAmount : 0m);
-        var vat10Amount = lineCalculations.Sum(item => item.VatRate == 10 ? item.VatAmount : 0m);
-        var exemptAmount = lineCalculations.Sum(item => item.ExemptAmount);
-        var totalVatAmount = vat5Amount + vat10Amount;
-        var totalAmount = lineCalculations.Sum(item => item.TotalAmount);
-        var xmlInput = BuildXmlInput(effectiveCommand, taxpayer);
-        var generated = _xmlGenerator.GenerateFacturaXML(xmlInput);
-        ValidateGeneratedFacturaResult(generated);
-        var document = SifenDocument.CreateInvoice(
-            tenantId,
-            effectiveCommand.Environment,
-            generated.Cdc,
-            effectiveCommand.DocumentType,
-            effectiveCommand.DocumentNumber.PadLeft(7, '0'),
-            effectiveCommand.EstablishmentCode.PadLeft(3, '0'),
-            effectiveCommand.ExpeditionPointCode.PadLeft(3, '0'),
-            effectiveCommand.Currency.ToString(),
-            MapSaleCondition(effectiveCommand.SaleCondition),
-            effectiveCommand.ReceptorNombre,
-            effectiveCommand.ReceptorDocumento,
-            effectiveCommand.ReceptorDireccion,
-            effectiveCommand.ReceptorEmail,
-            effectiveCommand.ReceptorPhone,
-            effectiveCommand.Notes,
-            subtotalAmount,
-            vat5Amount,
-            vat10Amount,
-            exemptAmount,
-            totalVatAmount,
-            totalAmount,
-            generated.Xml,
-            BuildTestCdc(generated.Cdc),
-            BuildTestQrText(effectiveCommand.DocumentNumber, effectiveCommand.ReceptorNombre),
-            false,
-            _clock.UtcNow);
-        var correlationId = document.EnsureCorrelationId();
-        document.SetInternalStatus(FeInvoiceInternalStatus.DRAFT);
+        // 4. Calculo fiscal (puro, sin XML ni acceso a datos): falla antes de consumir un numero.
+        var fiscal = FiscalCalculationEngine.Calculate(
+            command.Items
+                .Select(item => new FiscalLineInput(item.Quantity, item.UnitPrice, MapVatType(item.VatRate)))
+                .ToList(),
+            command.Currency.ToString());
+        var itemDescriptions = command.Items.Select(item => item.Description.Trim()).ToList();
 
-        _dbContext.Documents.Add(document);
-        _dbContext.DocumentLines.AddRange(lineCalculations.Select(item =>
-            SifenDocumentLine.Create(
-                tenantId,
-                document.Id,
-                item.LineNumber,
-                item.Description,
-                item.Quantity,
-                item.UnitPrice,
-                item.VatRate,
-                item.VatAmount,
-                item.ExemptAmount,
-                item.SubtotalAmount,
-                item.TotalAmount)));
-        _dbContext.DocumentLogs.Add(CreateLog(tenantId, document.Id, DocumentLogLevel.Information, "xml.generated", "Invoice XML generated."));
-        _dbContext.FeInvoiceEvents.Add(FeInvoiceEvent.Create(
-            tenantId,
-            document.Id,
-            correlationId,
-            null,
-            document.InternalStatus.ToString(),
-            "InvoiceCreatedTest",
-            "Factura creada en entorno TEST.",
-            null,
-            _clock.UtcNow));
-        _dbContext.FeTenantLogs.Add(FeTenantLog.Create(
-            tenantId,
-            document.Id,
-            correlationId,
-            FeTenantLogLevel.INFO,
-            "fe.invoice.create",
-            "Factura TEST creada y persistida con datos completos.",
-            JsonSerializer.Serialize(new
-            {
-                document.DocumentType,
-                document.ExternalDocumentNumber,
-                totalAmount,
-                items = lineCalculations.Count
-            }),
-            _clock.UtcNow));
+        // 5. Transaccion unica: reserva de numero -> codigo de seguridad -> CDC -> XML -> persistencia.
+        //    Si algo falla antes del commit, el numero no queda consumido. Sin red dentro de la transaccion.
+        //    (El proveedor InMemory de pruebas no soporta transacciones.)
+        await using IDbContextTransaction? transaction = _dbContext.Database.IsRelational()
+            ? await _dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+
+        SifenDocument document;
+        GeneratedFacturaXmlResult generated;
+        string correlationId;
 
         try
         {
-            await _xmlPreSubmissionValidator.ValidateTipoDoc01Async(generated.Xml, generated.Cdc, tenantId, effectiveCommand.Environment, cancellationToken);
+            var fiscalNow = _fiscalClock.Now;
+            var reserved = await _numberingService.ReserveAsync(
+                tenantId,
+                environment,
+                FacturaDocumentTypeCode,
+                DateOnly.FromDateTime(fiscalNow.DateTime),
+                cancellationToken);
+            var securityCode = SecurityCodeGenerator.Generate(reserved.FormattedNumber);
+
+            var xmlInput = new GenerateFacturaXmlInput(
+                new GenerateCdcInput(
+                    FacturaDocumentTypeCode,
+                    taxpayer.RucNumber,
+                    taxpayer.RucCheckDigit,
+                    reserved.EstablishmentCode,
+                    reserved.ExpeditionPointCode,
+                    reserved.FormattedNumber,
+                    taxpayer.TaxpayerType.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    NormalEmissionType,
+                    securityCode,
+                    fiscalNow.ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture)),
+                _clock.UtcNow,
+                1, // dSisFact: legado, se elimina con el builder oficial (NT-10) en Fase 4
+                taxpayer.LegalName,
+                taxpayer.Address,
+                command.ReceptorNombre,
+                command.ReceptorTipoDocumento,
+                command.ReceptorDocumento,
+                command.Currency,
+                command.SaleCondition,
+                fiscal,
+                itemDescriptions);
+            generated = _xmlGenerator.GenerateFacturaXML(xmlInput);
+            ValidateGeneratedFacturaResult(generated);
+
+            var totals = fiscal.Totals;
+            document = SifenDocument.CreateInvoice(
+                tenantId,
+                environment,
+                generated.Cdc,
+                FacturaDocumentTypeName,
+                reserved.FormattedNumber,
+                reserved.EstablishmentCode,
+                reserved.ExpeditionPointCode,
+                command.Currency.ToString(),
+                MapSaleCondition(command.SaleCondition),
+                command.ReceptorNombre,
+                command.ReceptorDocumento,
+                command.ReceptorDireccion,
+                command.ReceptorEmail,
+                command.ReceptorPhone,
+                command.Notes,
+                totals.TotalOperacion,
+                totals.Iva5,
+                totals.Iva10,
+                totals.SubExento,
+                totals.TotalIva,
+                totals.TotalGeneral,
+                generated.Xml,
+                BuildTestCdc(generated.Cdc),
+                BuildTestQrText(reserved.FormattedNumber, command.ReceptorNombre),
+                false,
+                fiscalNow);
+            document.SetFiscalTrace(reserved.StampingNumber, reserved.SequenceId);
+            correlationId = document.EnsureCorrelationId();
+            document.SetInternalStatus(FeInvoiceInternalStatus.DRAFT);
+
+            _dbContext.Documents.Add(document);
+            _dbContext.DocumentLines.AddRange(fiscal.Lines.Select((line, index) =>
+                SifenDocumentLine.Create(
+                    tenantId,
+                    document.Id,
+                    line.Number,
+                    itemDescriptions[index],
+                    line.Quantity,
+                    line.UnitPrice,
+                    (int)line.TasaIva,
+                    line.LiquidacionIva,
+                    line.BaseExenta,
+                    line.TotalOperacion,
+                    line.TotalOperacion)));
+            _dbContext.DocumentLogs.Add(CreateLog(tenantId, document.Id, DocumentLogLevel.Information, "xml.generated", "Invoice XML generated."));
+            _dbContext.FeInvoiceEvents.Add(FeInvoiceEvent.Create(
+                tenantId,
+                document.Id,
+                correlationId,
+                null,
+                document.InternalStatus.ToString(),
+                "InvoiceCreatedTest",
+                "Factura creada.",
+                null,
+                _clock.UtcNow));
+            _dbContext.FeTenantLogs.Add(FeTenantLog.Create(
+                tenantId,
+                document.Id,
+                correlationId,
+                FeTenantLogLevel.INFO,
+                "fe.invoice.create",
+                "Factura creada y persistida con numeracion reservada en servidor.",
+                JsonSerializer.Serialize(new
+                {
+                    document.DocumentType,
+                    document.ExternalDocumentNumber,
+                    totalAmount = totals.TotalGeneral,
+                    items = fiscal.Lines.Count
+                }),
+                _clock.UtcNow));
+            _dbContext.IdempotencyRecords.Add(IdempotencyRecord.Create(tenantId, command.IdempotencyKey, requestHash, document.Id));
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
+        }
+        catch (DbUpdateException)
+        {
+            // Carrera con la misma Idempotency-Key (indice unico): se descarta todo y se devuelve la factura ganadora.
+            if (transaction is not null)
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+            }
+
+            _dbContext.ChangeTracker.Clear();
+            var winner = await TryReplayAsync(tenantId, command.IdempotencyKey, requestHash, cancellationToken);
+            if (winner is not null)
+            {
+                return winner;
+            }
+
+            throw;
+        }
+
+        try
+        {
+            await _xmlPreSubmissionValidator.ValidateTipoDoc01Async(generated.Xml, generated.Cdc, tenantId, environment, cancellationToken);
             _dbContext.DocumentLogs.Add(CreateLog(tenantId, document.Id, DocumentLogLevel.Information, "xml.validated", "Invoice XML validated locally."));
         }
         catch (Exception ex) when (IsInternalValidationRuntime(ex) && IsDiagnosticTransport(diagnostic.TransportMode))
@@ -200,16 +301,12 @@ public sealed class EfInvoiceService : IInvoiceService
             {
                 return await CompleteUnsignedLocalDraftAsync(
                     document,
-                    tenantSettings,
-                    effectiveCommand.DocumentNumber,
                     ex.Message,
                     cancellationToken);
             }
 
             return await CompleteInternalValidationFailureAsync(
                 document,
-                tenantSettings,
-                effectiveCommand.DocumentNumber,
                 "INTERNAL_VALIDATION_XSD_FAILED",
                 ex.Message,
                 "internal.validation.failed",
@@ -220,8 +317,6 @@ public sealed class EfInvoiceService : IInvoiceService
         {
             return await CompleteUnsignedLocalDraftAsync(
                 document,
-                tenantSettings,
-                effectiveCommand.DocumentNumber,
                 BuildUnsignedLocalValidationDetail(diagnostic),
                 cancellationToken);
         }
@@ -234,7 +329,7 @@ public sealed class EfInvoiceService : IInvoiceService
                 var signed = await _xmlDocumentSigner.SignAsync(
                     new SignXmlDocumentCommand(
                         tenantId,
-                        effectiveCommand.Environment,
+                        environment,
                         generated.Cdc,
                         generated.Xml),
                     cancellationToken);
@@ -249,16 +344,12 @@ public sealed class EfInvoiceService : IInvoiceService
                 {
                     return await CompleteUnsignedLocalDraftAsync(
                         document,
-                        tenantSettings,
-                        effectiveCommand.DocumentNumber,
                         ex.Message,
                         cancellationToken);
                 }
 
                 return await CompleteInternalValidationFailureAsync(
                     document,
-                    tenantSettings,
-                    effectiveCommand.DocumentNumber,
                     "INTERNAL_VALIDATION_SIGNATURE_FAILED",
                     ex.Message,
                     "internal.validation.failed",
@@ -278,8 +369,6 @@ public sealed class EfInvoiceService : IInvoiceService
             {
                 return await CompleteUnsignedLocalDraftAsync(
                     document,
-                    tenantSettings,
-                    effectiveCommand.DocumentNumber,
                     BuildUnsignedLocalValidationDetail(diagnostic),
                     cancellationToken);
             }
@@ -303,10 +392,9 @@ public sealed class EfInvoiceService : IInvoiceService
                 {
                     generated.Cdc,
                     signed = canSignLocally,
-                    environment = effectiveCommand.Environment.ToString(),
+                    environment = environment.ToString(),
                     transportMode = diagnostic.TransportMode
                 })));
-            AdvanceTenantDocumentNumberIfNeeded(tenantSettings, effectiveCommand.DocumentNumber);
             await _dbContext.SaveChangesAsync(cancellationToken);
 
             return new CreateInvoiceResult(
@@ -326,7 +414,7 @@ public sealed class EfInvoiceService : IInvoiceService
         var submission = await _submissionGateway.SendToSifenAsync(
             new SendToSifenCommand(
                 tenantId,
-                effectiveCommand.Environment,
+                environment,
                 generated.Cdc,
                 signedXml!),
             cancellationToken);
@@ -334,8 +422,6 @@ public sealed class EfInvoiceService : IInvoiceService
         var parsed = _responseParser.ParseResponse(submission.RawResponse);
         ApplySubmissionOutcome(document, submission, parsed);
         AddSubmissionLogs(tenantId, document.Id, submission, parsed);
-
-        AdvanceTenantDocumentNumberIfNeeded(tenantSettings, effectiveCommand.DocumentNumber);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -606,36 +692,6 @@ public sealed class EfInvoiceService : IInvoiceService
             .ToArray();
     }
 
-    private GenerateFacturaXmlInput BuildXmlInput(CreateInvoiceCommand command, TaxpayerProfile taxpayer)
-    {
-        return new GenerateFacturaXmlInput(
-            new(
-                "01",
-                taxpayer.RucNumber,
-                taxpayer.RucCheckDigit,
-                command.EstablishmentCode,
-                command.ExpeditionPointCode,
-                command.DocumentNumber,
-                command.TipoContribuyente,
-                command.TipoEmision,
-                command.SecurityCode,
-                command.IssueDate.ToString("yyyyMMdd")),
-            _clock.UtcNow,
-            command.SistemaFacturacion,
-            taxpayer.LegalName,
-            command.EmisorDireccion,
-            command.ReceptorNombre,
-            command.ReceptorTipoDocumento,
-            command.ReceptorDocumento,
-            command.Currency,
-            command.SaleCondition,
-            command.Items.Select(item => new GenerateFacturaXmlItemInput(
-                item.Description,
-                item.Quantity,
-                item.UnitPrice,
-                MapVatType(item.VatRate))).ToArray());
-    }
-
     private async Task<InvoiceDetail> MapDetailAsync(SifenDocument document, CancellationToken cancellationToken)
     {
         var logs = await _dbContext.DocumentLogs
@@ -896,21 +952,6 @@ public sealed class EfInvoiceService : IInvoiceService
                 cancellationToken);
     }
 
-    private static CreateInvoiceCommand ApplyTenantSettings(
-        CreateInvoiceCommand command,
-        TenantSifenSettings? tenantSettings)
-    {
-        if (tenantSettings is null)
-        {
-            return command;
-        }
-
-        return command with
-        {
-            Environment = tenantSettings.Environment
-        };
-    }
-
     private async Task<TenantFeOperationalDiagnostic> EnsureSubmissionIsAllowedAsync(
         Guid tenantId,
         SifenEnvironmentType environment,
@@ -1038,19 +1079,15 @@ public sealed class EfInvoiceService : IInvoiceService
 
     private static void ValidateCommand(CreateInvoiceCommand command)
     {
-        ValidateRequired(command.DocumentType, nameof(command.DocumentType));
-        ValidateRequired(command.EstablishmentCode, nameof(command.EstablishmentCode));
-        ValidateRequired(command.ExpeditionPointCode, nameof(command.ExpeditionPointCode));
-        ValidateRequired(command.DocumentNumber, nameof(command.DocumentNumber));
-        ValidateRequired(command.SecurityCode, nameof(command.SecurityCode));
-        ValidateRequired(command.EmisorDireccion, nameof(command.EmisorDireccion));
+        ValidateRequired(command.IdempotencyKey, "Idempotency-Key");
+
+        if (command.IdempotencyKey.Length > 128)
+        {
+            throw new DomainException("Idempotency-Key must not exceed 128 characters.");
+        }
+
         ValidateRequired(command.ReceptorNombre, nameof(command.ReceptorNombre));
         ValidateRequired(command.ReceptorDocumento, nameof(command.ReceptorDocumento));
-
-        if (command.IssueDate == default)
-        {
-            throw new DomainException("IssueDate is required.");
-        }
 
         if (!Enum.IsDefined(command.ReceptorTipoDocumento))
         {
@@ -1138,46 +1175,64 @@ public sealed class EfInvoiceService : IInvoiceService
         return Math.Round(value, 2, MidpointRounding.AwayFromZero);
     }
 
-    private static string IncrementDocumentNumber(string currentNumber)
+    /// <summary>Ambiente activo de la plataforma (Sifen:ActiveEnvironment); nunca lo decide el cliente.</summary>
+    private SifenEnvironmentType ResolveEnvironment()
     {
-        if (!int.TryParse(currentNumber, out var numericValue))
-        {
-            throw new DomainException("Tenant current document number is invalid.");
-        }
-
-        return (numericValue + 1).ToString().PadLeft(7, '0');
+        var configured = _configuration["Sifen:ActiveEnvironment"];
+        return Enum.TryParse<SifenEnvironmentType>(configured, true, out var parsed)
+            ? parsed
+            : SifenEnvironmentType.Test;
     }
 
-    private static void AdvanceTenantDocumentNumberIfNeeded(
-        TenantSifenSettings? tenantSettings,
-        string emittedDocumentNumber)
+    private async Task<CreateInvoiceResult?> TryReplayAsync(
+        Guid tenantId,
+        string idempotencyKey,
+        string requestHash,
+        CancellationToken cancellationToken)
     {
-        if (tenantSettings is null ||
-            !string.Equals(tenantSettings.CurrentDocumentNumber, emittedDocumentNumber, StringComparison.Ordinal))
+        var record = await _dbContext.IdempotencyRecords
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.TenantId == tenantId && item.Key == idempotencyKey, cancellationToken);
+
+        if (record is null)
         {
-            return;
+            return null;
         }
 
-        tenantSettings.Update(
-            tenantSettings.Environment,
-            tenantSettings.CscIdentifier,
-            tenantSettings.CscSecretReference,
-            tenantSettings.EstablishmentCode,
-            tenantSettings.ExpeditionPointCode,
-            IncrementDocumentNumber(tenantSettings.CurrentDocumentNumber),
-            tenantSettings.StampingNumber,
-            tenantSettings.CertificateSecretReference,
-            tenantSettings.CertificatePasswordSecretReference,
-            tenantSettings.CertificateAlias,
-            tenantSettings.XmlSchemaRootPath,
-            tenantSettings.EndpointUrl,
-            tenantSettings.TransportMode);
+        if (!string.Equals(record.RequestHash, requestHash, StringComparison.Ordinal))
+        {
+            throw new UserFacingException(
+                "IDEMPOTENCY_KEY_REUSED",
+                "Validation",
+                "La Idempotency-Key ya se uso con otro contenido.",
+                "Usa una Idempotency-Key nueva para una factura distinta.",
+                false,
+                422,
+                "Idempotency key reused with a different request payload.");
+        }
+
+        var document = await _dbContext.Documents
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == record.DocumentId && item.TenantId == tenantId, cancellationToken);
+
+        return document is null
+            ? null
+            : new CreateInvoiceResult(
+                document.Id,
+                document.Cdc,
+                document.Status,
+                document.TotalAmount,
+                document.XmlPayload,
+                document.SignedXmlPayload,
+                document.StatusCode,
+                document.StatusMessage,
+                document.InternalStatus.ToString(),
+                document.CorrelationId ?? string.Empty,
+                "Solicitud repetida: se devuelve la factura ya creada.");
     }
 
     private async Task<CreateInvoiceResult> CompleteInternalValidationFailureAsync(
         SifenDocument document,
-        TenantSifenSettings? tenantSettings,
-        string emittedDocumentNumber,
         string statusCode,
         string detail,
         string logEventType,
@@ -1205,7 +1260,6 @@ public sealed class EfInvoiceService : IInvoiceService
                 statusCode,
                 document.Environment
             })));
-        AdvanceTenantDocumentNumberIfNeeded(tenantSettings, emittedDocumentNumber);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         return new CreateInvoiceResult(
@@ -1224,8 +1278,6 @@ public sealed class EfInvoiceService : IInvoiceService
 
     private async Task<CreateInvoiceResult> CompleteUnsignedLocalDraftAsync(
         SifenDocument document,
-        TenantSifenSettings? tenantSettings,
-        string emittedDocumentNumber,
         string detail,
         CancellationToken cancellationToken)
     {
@@ -1255,7 +1307,6 @@ public sealed class EfInvoiceService : IInvoiceService
                 document.Environment,
                 detail
             })));
-        AdvanceTenantDocumentNumberIfNeeded(tenantSettings, emittedDocumentNumber);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         return new CreateInvoiceResult(
@@ -1270,34 +1321,6 @@ public sealed class EfInvoiceService : IInvoiceService
             document.InternalStatus.ToString(),
             document.CorrelationId,
             UnsignedLocalValidationMessage);
-    }
-
-    private static List<InvoiceLineCalculation> BuildLineCalculations(IReadOnlyCollection<CreateInvoiceItemCommand> items)
-    {
-        return items
-            .Select((item, index) =>
-            {
-                var subtotalAmount = Round(item.Quantity * item.UnitPrice);
-                var vatAmount = item.VatRate switch
-                {
-                    10 => Round(subtotalAmount / 11m),
-                    5 => Round(subtotalAmount / 21m),
-                    _ => 0m
-                };
-                var exemptAmount = item.VatRate == 0 ? subtotalAmount : 0m;
-
-                return new InvoiceLineCalculation(
-                    index + 1,
-                    item.Description.Trim(),
-                    item.Quantity,
-                    item.UnitPrice,
-                    item.VatRate,
-                    vatAmount,
-                    exemptAmount,
-                    subtotalAmount,
-                    subtotalAmount);
-            })
-            .ToList();
     }
 
     private static InvoiceVatType MapVatType(int vatRate)

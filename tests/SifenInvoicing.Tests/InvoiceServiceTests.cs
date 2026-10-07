@@ -35,7 +35,7 @@ public sealed class InvoiceServiceTests
 
         await using var dbContext = CreateDbContext(tenantAccessor);
         dbContext.Tenants.Add(tenant);
-        dbContext.TaxpayerProfiles.Add(TaxpayerProfile.Create(tenantId, "80012345", "6", "ACME Paraguay SA"));
+        TestFiscalSetup.Seed(dbContext, tenantId);
         dbContext.TenantCertificateMetadata.Add(TenantCertificateMetadata.Create(
             tenantId,
             SifenEnvironmentType.Test,
@@ -64,17 +64,12 @@ public sealed class InvoiceServiceTests
             new FakeResponseParser(),
             CreateConfiguration(),
             new NullAuditTrail(),
-            new SystemClock());
+            new SystemClock(),
+            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
+            new TestFiscalClock());
 
         var result = await service.CreateAsync(new CreateInvoiceCommand(
-            SifenEnvironmentType.Test,
-            "Factura electrónica",
-            "001",
-            "001",
-            "0000001",
-            "123456789",
-            new DateOnly(2026, 4, 25),
-            "Asuncion 123",
+            Guid.NewGuid().ToString(),
             null,
             "Cliente Demo",
             InvoiceReceiverDocumentType.Ruc,
@@ -84,9 +79,6 @@ public sealed class InvoiceServiceTests
             null,
             InvoiceCurrency.PYG,
             InvoiceSaleCondition.Cash,
-            1,
-            "1",
-            "1",
             [
                 new CreateInvoiceItemCommand("Servicio mensual", 1, 100000m, 10)
             ]));
@@ -117,7 +109,7 @@ public sealed class InvoiceServiceTests
 
         await using var dbContext = CreateDbContext(tenantAccessor);
         dbContext.Tenants.Add(tenant);
-        dbContext.TaxpayerProfiles.Add(TaxpayerProfile.Create(tenantId, "80012345", "6", "ACME Paraguay SA"));
+        TestFiscalSetup.Seed(dbContext, tenantId);
         dbContext.TenantCertificateMetadata.Add(TenantCertificateMetadata.Create(
             tenantId,
             SifenEnvironmentType.Test,
@@ -146,17 +138,12 @@ public sealed class InvoiceServiceTests
             new FakeResponseParser(),
             CreateConfiguration(),
             new NullAuditTrail(),
-            new SystemClock());
+            new SystemClock(),
+            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
+            new TestFiscalClock());
 
         var result = await service.CreateAsync(new CreateInvoiceCommand(
-            SifenEnvironmentType.Test,
-            "Factura electrónica",
-            "001",
-            "001",
-            "0000001",
-            "123456789",
-            new DateOnly(2026, 4, 25),
-            "Asuncion 123",
+            Guid.NewGuid().ToString(),
             null,
             "Cliente Demo",
             InvoiceReceiverDocumentType.Ruc,
@@ -166,9 +153,6 @@ public sealed class InvoiceServiceTests
             null,
             InvoiceCurrency.PYG,
             InvoiceSaleCondition.Cash,
-            1,
-            "1",
-            "1",
             [
                 new CreateInvoiceItemCommand("Servicio mensual", 1, 100000m, 10)
             ]));
@@ -214,7 +198,9 @@ public sealed class InvoiceServiceTests
             new FakeResponseParser(),
             CreateConfiguration(),
             new NullAuditTrail(),
-            new SystemClock());
+            new SystemClock(),
+            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
+            new TestFiscalClock());
 
         var exception = await Assert.ThrowsAsync<UserFacingException>(() => CreateInvoiceAsync(service));
 
@@ -251,7 +237,9 @@ public sealed class InvoiceServiceTests
             new FakeResponseParser(),
             CreateConfiguration(),
             new NullAuditTrail(),
-            new SystemClock());
+            new SystemClock(),
+            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
+            new TestFiscalClock());
 
         await CreateInvoiceAsync(service);
         var exception = await Assert.ThrowsAsync<UserFacingException>(() => CreateInvoiceAsync(service));
@@ -274,7 +262,7 @@ public sealed class InvoiceServiceTests
 
         await using var dbContext = CreateDbContext(tenantAccessor);
         dbContext.Tenants.Add(tenant);
-        dbContext.TaxpayerProfiles.Add(TaxpayerProfile.Create(tenantId, "80012345", "6", "ACME Paraguay SA"));
+        TestFiscalSetup.Seed(dbContext, tenantId, firstNumber: 7);
         dbContext.TenantCertificateMetadata.Add(TenantCertificateMetadata.Create(
             tenantId,
             SifenEnvironmentType.Test,
@@ -302,17 +290,12 @@ public sealed class InvoiceServiceTests
             new FakeResponseParser(),
             CreateConfiguration(),
             new NullAuditTrail(),
-            new SystemClock());
+            new SystemClock(),
+            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
+            new TestFiscalClock());
 
         await service.CreateAsync(new CreateInvoiceCommand(
-            SifenEnvironmentType.Test,
-            "Factura electrónica",
-            "001",
-            "001",
-            "0000007",
-            "123456789",
-            new DateOnly(2026, 4, 25),
-            "Asuncion 123",
+            Guid.NewGuid().ToString(),
             null,
             "Cliente Demo",
             InvoiceReceiverDocumentType.Ruc,
@@ -322,9 +305,6 @@ public sealed class InvoiceServiceTests
             null,
             InvoiceCurrency.PYG,
             InvoiceSaleCondition.Cash,
-            1,
-            "1",
-            "1",
             [new CreateInvoiceItemCommand("Servicio mensual", 1, 100000m, 10)]));
 
         var found = await service.SearchAsync(new InvoiceSearchQuery(
@@ -354,7 +334,7 @@ public sealed class InvoiceServiceTests
 
         await using var dbContext = CreateDbContext(tenantAccessor);
         dbContext.Tenants.Add(tenant);
-        dbContext.TaxpayerProfiles.Add(TaxpayerProfile.Create(tenantId, "80012345", "6", "ACME Paraguay SA"));
+        TestFiscalSetup.Seed(dbContext, tenantId);
         dbContext.TenantCertificateMetadata.Add(TenantCertificateMetadata.Create(
             tenantId,
             SifenEnvironmentType.Test,
@@ -383,17 +363,12 @@ public sealed class InvoiceServiceTests
             new FakeResponseParser(),
             CreateConfiguration(),
             new NullAuditTrail(),
-            new SystemClock());
+            new SystemClock(),
+            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
+            new TestFiscalClock());
 
         var exception = await Assert.ThrowsAsync<DomainException>(() => service.CreateAsync(new CreateInvoiceCommand(
-            SifenEnvironmentType.Test,
-            "Factura electrónica",
-            "001",
-            "001",
-            "0000001",
-            "123456789",
-            new DateOnly(2026, 4, 25),
-            "Asuncion 123",
+            Guid.NewGuid().ToString(),
             null,
             "Cliente Demo",
             InvoiceReceiverDocumentType.Ruc,
@@ -403,9 +378,6 @@ public sealed class InvoiceServiceTests
             null,
             InvoiceCurrency.PYG,
             InvoiceSaleCondition.Cash,
-            1,
-            "1",
-            "1",
             [
                 new CreateInvoiceItemCommand("Servicio mensual", 1, 100000m, 10)
             ])));
@@ -429,7 +401,7 @@ public sealed class InvoiceServiceTests
 
         await using var dbContext = CreateDbContext(tenantAccessor);
         dbContext.Tenants.Add(tenant);
-        dbContext.TaxpayerProfiles.Add(TaxpayerProfile.Create(tenantId, "80012345", "6", "ACME Paraguay SA"));
+        TestFiscalSetup.Seed(dbContext, tenantId);
         dbContext.TenantCertificateMetadata.Add(TenantCertificateMetadata.Create(
             tenantId,
             SifenEnvironmentType.Test,
@@ -457,17 +429,12 @@ public sealed class InvoiceServiceTests
             new DefaultParser(),
             CreateConfiguration(),
             new NullAuditTrail(),
-            new SystemClock());
+            new SystemClock(),
+            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
+            new TestFiscalClock());
 
         var result = await service.CreateAsync(new CreateInvoiceCommand(
-            SifenEnvironmentType.Test,
-            "Factura electrónica",
-            "001",
-            "001",
-            "0000001",
-            "123456789",
-            new DateOnly(2026, 4, 25),
-            "Asuncion 123",
+            Guid.NewGuid().ToString(),
             null,
             "Cliente Demo",
             InvoiceReceiverDocumentType.Ruc,
@@ -477,9 +444,6 @@ public sealed class InvoiceServiceTests
             null,
             InvoiceCurrency.PYG,
             InvoiceSaleCondition.Cash,
-            1,
-            "1",
-            "1",
             [
                 new CreateInvoiceItemCommand("Servicio mensual", 1, 100000m, 10)
             ]));
@@ -526,7 +490,9 @@ public sealed class InvoiceServiceTests
             new DefaultParser(),
             CreateConfiguration(),
             new NullAuditTrail(),
-            new SystemClock());
+            new SystemClock(),
+            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
+            new TestFiscalClock());
 
         var created = await CreateInvoiceAsync(service);
 
@@ -566,7 +532,9 @@ public sealed class InvoiceServiceTests
             new DefaultParser(),
             CreateConfiguration(),
             new NullAuditTrail(),
-            new SystemClock());
+            new SystemClock(),
+            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
+            new TestFiscalClock());
 
         var created = await CreateInvoiceAsync(failedService);
 
@@ -583,7 +551,9 @@ public sealed class InvoiceServiceTests
             new DefaultParser(),
             CreateConfiguration(),
             new NullAuditTrail(),
-            new SystemClock());
+            new SystemClock(),
+            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
+            new TestFiscalClock());
 
         var retried = await retryService.RetryAsync(created.Id);
         var stored = await retryService.GetByIdAsync(created.Id);
@@ -627,7 +597,9 @@ public sealed class InvoiceServiceTests
             new DefaultParser(),
             CreateConfiguration(),
             new NullAuditTrail(),
-            new SystemClock());
+            new SystemClock(),
+            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
+            new TestFiscalClock());
 
         var created = await CreateInvoiceAsync(service);
 
@@ -668,7 +640,9 @@ public sealed class InvoiceServiceTests
             new DefaultParser(),
             CreateConfiguration(),
             new NullAuditTrail(),
-            new SystemClock());
+            new SystemClock(),
+            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
+            new TestFiscalClock());
 
         var created = await CreateInvoiceAsync(failedService);
 
@@ -685,7 +659,9 @@ public sealed class InvoiceServiceTests
             new DefaultParser(),
             CreateConfiguration(),
             auditTrail,
-            new SystemClock());
+            new SystemClock(),
+            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
+            new TestFiscalClock());
 
         await retryService.RetryAsync(created.Id);
 
@@ -726,7 +702,9 @@ public sealed class InvoiceServiceTests
             new FakeResponseParser(),
             CreateConfiguration(),
             new NullAuditTrail(),
-            new SystemClock());
+            new SystemClock(),
+            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
+            new TestFiscalClock());
 
         var exception = await Assert.ThrowsAsync<UserFacingException>(() => CreateInvoiceAsync(service));
 
@@ -750,7 +728,7 @@ public sealed class InvoiceServiceTests
 
         await using var dbContext = CreateDbContext(tenantAccessor);
         dbContext.Tenants.Add(tenant);
-        dbContext.TaxpayerProfiles.Add(TaxpayerProfile.Create(tenantId, "80012345", "6", "ACME Paraguay SA"));
+        TestFiscalSetup.Seed(dbContext, tenantId);
         await dbContext.SaveChangesAsync();
 
         var submissionGateway = new CountingSubmissionGateway();
@@ -775,7 +753,9 @@ public sealed class InvoiceServiceTests
             new FakeResponseParser(),
             CreateConfiguration(allowUnsignedInternalValidation: true),
             new NullAuditTrail(),
-            new SystemClock());
+            new SystemClock(),
+            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
+            new TestFiscalClock());
 
         var result = await CreateInvoiceAsync(service);
         var stored = await service.GetByIdAsync(result.Id);
@@ -787,6 +767,225 @@ public sealed class InvoiceServiceTests
         Assert.Null(stored.SignedXmlPayload);
         Assert.Equal(0, submissionGateway.SendCount);
         Assert.Contains(stored.Logs, log => log.EventType == "internal.validation.degraded");
+    }
+
+    // ---- Fase 3: numeracion, idempotencia, campos fiscales controlados por el backend ----
+
+    private sealed record Fixture(EfInvoiceService Service, SifenDbContext Db, Guid TenantId, ITenantContextAccessor Accessor)
+    {
+        /// <summary>El tenant es ambiente (AsyncLocal): cada prueba lo activa en su propio flujo.</summary>
+        public void Use() => Accessor.SetCurrent(new TenantContext { TenantId = TenantId.ToString(), ResolvedTenantId = TenantId, IsResolved = true });
+    }
+
+    private static async Task<Fixture> CreateFiscalFixtureAsync(
+        Guid? tenantIdOverride = null,
+        bool seedNumbering = true,
+        bool fiscalProfile = true,
+        long firstNumber = 1,
+        ITenantContextAccessor? sharedAccessor = null,
+        SifenDbContext? sharedDb = null)
+    {
+        var tenant = Tenant.CreateSharedDatabaseTenant($"fiscal-{Guid.NewGuid():N}"[..20], "FISCAL");
+        var tenantId = tenantIdOverride ?? tenant.Id;
+        var accessor = sharedAccessor ?? new AsyncLocalTenantContextAccessor();
+        accessor.SetCurrent(new TenantContext { TenantId = tenantId.ToString(), ResolvedTenantId = tenantId, IsResolved = true });
+        var dbContext = sharedDb ?? CreateDbContext(accessor);
+        dbContext.Tenants.Add(tenant);
+
+        if (fiscalProfile)
+        {
+            dbContext.TaxpayerProfiles.Add(TestFiscalSetup.Taxpayer(tenant.Id));
+        }
+        else
+        {
+            dbContext.TaxpayerProfiles.Add(TaxpayerProfile.Create(tenant.Id, "80012345", "6", "ACME Paraguay SA"));
+        }
+
+        if (seedNumbering)
+        {
+            TestFiscalSetup.Seed(dbContext, tenant.Id, firstNumber: firstNumber, withTaxpayer: false);
+        }
+
+        dbContext.TenantCertificateMetadata.Add(TenantCertificateMetadata.Create(
+            tenant.Id, SifenEnvironmentType.Test, CertificatePurpose.XmlSignature, "xml-signing", "CN=ACME", "ABC123", "123",
+            "config:certificate", "config:password", DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(30)));
+        await dbContext.SaveChangesAsync();
+
+        var service = new EfInvoiceService(
+            dbContext, accessor, new FacturaXmlGenerator(), new PassThroughFacturaXmlPreSubmissionValidator(),
+            new InvoiceKudePdfRenderer(), new ReadyTenantCertificateValidator(), new FakeXmlDocumentSigner(),
+            new StubOperationalReadinessReporter(), new CountingSubmissionGateway(), new FakeResponseParser(),
+            CreateConfiguration(), new NullAuditTrail(), new SystemClock(),
+            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext), new TestFiscalClock());
+
+        return new Fixture(service, dbContext, tenant.Id, accessor);
+    }
+
+    private static CreateInvoiceCommand Command(string key, decimal price = 100000m, string description = "Servicio mensual") =>
+        new(key, null, "Cliente Demo", InvoiceReceiverDocumentType.Ruc, "80099999", null, null, null,
+            InvoiceCurrency.PYG, InvoiceSaleCondition.Cash, [new CreateInvoiceItemCommand(description, 1, price, 10)]);
+
+    [Fact]
+    public async Task CreateAsync_ShouldAssignNumberStampAndCdcFromTenantFiscalConfiguration()
+    {
+        var f = await CreateFiscalFixtureAsync(firstNumber: 41);
+        f.Use();
+
+        var result = await f.Service.CreateAsync(Command("k-1"));
+        var doc = await f.Db.Documents.SingleAsync();
+
+        Assert.Equal("0000041", doc.ExternalDocumentNumber);
+        Assert.Equal("001", doc.EstablishmentCode);
+        Assert.Equal("001", doc.ExpeditionPointCode);
+        Assert.Equal(TestFiscalSetup.StampingNumber, doc.StampingNumber);
+        Assert.Equal(SifenEnvironmentType.Test, doc.Environment);
+
+        // CDC (Manual v150 sec. 10.1): tipoDoc RUC DV est punto numero tipoContrib fecha tipoEmision codSeg DV
+        var cdc = result.Cdc;
+        Assert.Equal(44, cdc.Length);
+        Assert.Equal("01", cdc[..2]);
+        Assert.Equal("80012345", cdc[2..10]);
+        Assert.Equal("6", cdc[10..11]);
+        Assert.Equal("001", cdc[11..14]);
+        Assert.Equal("001", cdc[14..17]);
+        Assert.Equal("0000041", cdc[17..24]);
+        Assert.Equal("2", cdc[24..25]);                       // tipo contribuyente de la configuracion (persona juridica)
+        Assert.Equal(new TestFiscalClock().Now.ToString("yyyyMMdd"), cdc[25..33]);
+        Assert.Equal("1", cdc[33..34]);                       // emision normal
+        Assert.NotEqual("0000041", cdc[34..41]);
+        Assert.Equal(9, cdc[34..43].Length);
+        Assert.NotEqual("123456789", cdc[34..43]);            // nunca la constante historica
+        Assert.True(SifenInvoicing.Application.Cdc.CdcGenerator.ValidateCDC(cdc));
+    }
+
+    [Fact]
+    public async Task CreateAsync_ShouldConsumeSequentialNumbers()
+    {
+        var f = await CreateFiscalFixtureAsync();
+        f.Use();
+
+        await f.Service.CreateAsync(Command("k-1"));
+        await f.Service.CreateAsync(Command("k-2", 200000m));
+
+        var numbers = (await f.Db.Documents.Select(d => d.ExternalDocumentNumber).ToListAsync()).OrderBy(n => n).ToList();
+        Assert.Equal(["0000001", "0000002"], numbers);
+        Assert.Equal(3, (await f.Db.NumberingSequences.SingleAsync()).NextNumber);
+    }
+
+    [Fact]
+    public async Task CreateAsync_Idempotency_SameKeyAndContent_ShouldReturnSameInvoiceWithoutConsumingAnotherNumber()
+    {
+        var f = await CreateFiscalFixtureAsync();
+        f.Use();
+
+        var first = await f.Service.CreateAsync(Command("same-key"));
+        var second = await f.Service.CreateAsync(Command("same-key"));
+
+        Assert.Equal(first.Id, second.Id);
+        Assert.Equal(first.Cdc, second.Cdc);
+        Assert.Single(await f.Db.Documents.ToListAsync());
+        Assert.Single(await f.Db.IdempotencyRecords.ToListAsync());
+        Assert.Equal(2, (await f.Db.NumberingSequences.SingleAsync()).NextNumber);
+    }
+
+    [Fact]
+    public async Task CreateAsync_Idempotency_SameKeyDifferentContent_ShouldFailWithoutCreatingAnything()
+    {
+        var f = await CreateFiscalFixtureAsync();
+        f.Use();
+        await f.Service.CreateAsync(Command("reused"));
+
+        var ex = await Assert.ThrowsAsync<UserFacingException>(() => f.Service.CreateAsync(Command("reused", 999m)));
+
+        Assert.Equal("IDEMPOTENCY_KEY_REUSED", ex.ErrorCode);
+        Assert.Single(await f.Db.Documents.ToListAsync());
+        Assert.Equal(2, (await f.Db.NumberingSequences.SingleAsync()).NextNumber);
+    }
+
+    [Fact]
+    public async Task CreateAsync_ShouldRequireIdempotencyKey()
+    {
+        var f = await CreateFiscalFixtureAsync();
+        f.Use();
+
+        await Assert.ThrowsAsync<DomainException>(() => f.Service.CreateAsync(Command("  ")));
+        Assert.Empty(await f.Db.Documents.ToListAsync());
+        Assert.Equal(1, (await f.Db.NumberingSequences.SingleAsync()).NextNumber);
+    }
+
+    [Fact]
+    public async Task CreateAsync_Idempotency_ShouldBeScopedPerTenant()
+    {
+        var shared = new AsyncLocalTenantContextAccessor();
+        var a = await CreateFiscalFixtureAsync(sharedAccessor: shared);
+        var b = await CreateFiscalFixtureAsync(sharedAccessor: shared, sharedDb: a.Db);
+
+        shared.SetCurrent(new TenantContext { TenantId = a.TenantId.ToString(), ResolvedTenantId = a.TenantId, IsResolved = true });
+        var ra = await a.Service.CreateAsync(Command("shared-key"));
+        shared.SetCurrent(new TenantContext { TenantId = b.TenantId.ToString(), ResolvedTenantId = b.TenantId, IsResolved = true });
+        var rb = await b.Service.CreateAsync(Command("shared-key"));
+
+        Assert.NotEqual(ra.Id, rb.Id);
+        Assert.Equal(2, await a.Db.IdempotencyRecords.IgnoreQueryFilters().CountAsync());
+        // Cada tenant arranca su propia numeracion en 0000001.
+        var numbers = await a.Db.Documents.IgnoreQueryFilters().Select(d => d.ExternalDocumentNumber).ToListAsync();
+        Assert.Equal(["0000001", "0000001"], numbers);
+    }
+
+    [Fact]
+    public async Task CreateAsync_ShouldNotConsumeNumber_WhenNumberingIsNotConfigured()
+    {
+        var f = await CreateFiscalFixtureAsync(seedNumbering: false);
+        f.Use();
+
+        var ex = await Assert.ThrowsAsync<UserFacingException>(() => f.Service.CreateAsync(Command("k-1")));
+
+        Assert.Equal("FISCAL_NUMBERING_NOT_CONFIGURED", ex.ErrorCode);
+        Assert.Empty(await f.Db.Documents.ToListAsync());
+        Assert.Empty(await f.Db.IdempotencyRecords.ToListAsync());
+    }
+
+    [Fact]
+    public async Task CreateAsync_ShouldFailBeforeReservingNumber_WhenFiscalProfileIsIncomplete()
+    {
+        var f = await CreateFiscalFixtureAsync(fiscalProfile: false);
+        f.Use();
+
+        var ex = await Assert.ThrowsAsync<UserFacingException>(() => f.Service.CreateAsync(Command("k-1")));
+
+        Assert.Equal("FISCAL_CONFIGURATION_INCOMPLETE", ex.ErrorCode);
+        Assert.Equal(1, (await f.Db.NumberingSequences.SingleAsync()).NextNumber);
+    }
+
+    [Fact]
+    public async Task CreateAsync_ShouldNotConsumeNumber_WhenFiscalCalculationFails()
+    {
+        var f = await CreateFiscalFixtureAsync();
+        f.Use();
+        var usd = Command("k-usd") with { Currency = InvoiceCurrency.USD };
+
+        await Assert.ThrowsAsync<DomainException>(() => f.Service.CreateAsync(usd));
+
+        Assert.Equal(1, (await f.Db.NumberingSequences.SingleAsync()).NextNumber);
+    }
+
+    [Fact]
+    public async Task CreateAsync_ShouldPersistTotalsFromFiscalEngine()
+    {
+        var f = await CreateFiscalFixtureAsync();
+        f.Use();
+        var command = Command("k-1") with
+        {
+            Items = [new CreateInvoiceItemCommand("A", 1, 150000m, 10), new CreateInvoiceItemCommand("B", 1, 150000m, 10)]
+        };
+
+        var result = await f.Service.CreateAsync(command);
+        var doc = await f.Db.Documents.SingleAsync();
+
+        Assert.Equal(300000m, result.TotalAmount);
+        Assert.Equal(27272m, doc.TotalVatAmount);
+        Assert.Equal(27272m, doc.Vat10Amount);
+        Assert.Equal(2, await f.Db.DocumentLines.CountAsync());
     }
 
     private static SifenDbContext CreateDbContext(ITenantContextAccessor tenantAccessor)
@@ -801,14 +1000,7 @@ public sealed class InvoiceServiceTests
     private static async Task<CreateInvoiceResult> CreateInvoiceAsync(IInvoiceService service)
     {
         return await service.CreateAsync(new CreateInvoiceCommand(
-            SifenEnvironmentType.Test,
-            "Factura electrónica",
-            "001",
-            "001",
-            "0000001",
-            "123456789",
-            new DateOnly(2026, 4, 25),
-            "Asuncion 123",
+            Guid.NewGuid().ToString(),
             null,
             "Cliente Demo",
             InvoiceReceiverDocumentType.Ruc,
@@ -818,9 +1010,6 @@ public sealed class InvoiceServiceTests
             null,
             InvoiceCurrency.PYG,
             InvoiceSaleCondition.Cash,
-            1,
-            "1",
-            "1",
             [
                 new CreateInvoiceItemCommand("Servicio mensual", 1, 100000m, 10)
             ]));
@@ -839,7 +1028,7 @@ public sealed class InvoiceServiceTests
     private static void SeedRetryDependencies(SifenDbContext dbContext, Tenant tenant)
     {
         dbContext.Tenants.Add(tenant);
-        dbContext.TaxpayerProfiles.Add(TaxpayerProfile.Create(tenant.Id, "80012345", "6", "ACME Paraguay SA"));
+        TestFiscalSetup.Seed(dbContext, tenant.Id);
         dbContext.TenantCertificateMetadata.Add(TenantCertificateMetadata.Create(
             tenant.Id,
             SifenEnvironmentType.Test,

@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SifenInvoicing.Infrastructure.Persistence;
 
@@ -11,9 +12,11 @@ using SifenInvoicing.Infrastructure.Persistence;
 namespace SifenInvoicing.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(SifenDbContext))]
-    partial class SifenDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261007124648_AddFiscalNumberingAndIdempotency")]
+    partial class AddFiscalNumberingAndIdempotency
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

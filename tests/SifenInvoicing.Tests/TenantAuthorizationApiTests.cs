@@ -164,4 +164,119 @@ public sealed class TenantAuthorizationApiTests : IClassFixture<TenantAuthorizat
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
+
+    // ---- /internal/* ----
+
+    [Theory]
+    [InlineData("POST", "/internal/onboarding/tenants")]
+    [InlineData("POST", "/internal/onboarding/tenants/00000000-0000-0000-0000-000000000001/taxpayer-profile")]
+    [InlineData("POST", "/internal/onboarding/tenants/00000000-0000-0000-0000-000000000001/fiscal-profile")]
+    [InlineData("POST", "/internal/onboarding/tenants/00000000-0000-0000-0000-000000000001/fiscal-stamps")]
+    [InlineData("POST", "/internal/onboarding/tenants/00000000-0000-0000-0000-000000000001/numbering-sequences")]
+    [InlineData("POST", "/internal/onboarding/tenants/00000000-0000-0000-0000-000000000001/sifen-settings")]
+    [InlineData("POST", "/internal/onboarding/tenants/00000000-0000-0000-0000-000000000001/certificates")]
+    [InlineData("GET", "/internal/onboarding/tenants/00000000-0000-0000-0000-000000000001/readiness")]
+    [InlineData("POST", "/internal/xml-signing/sign")]
+    public async Task InternalRoutes_ShouldReturn401_WithoutCredentials(string method, string path)
+    {
+        using var client = Client(tenantHeader: TenantA);
+        var response = await client.SendAsync(new HttpRequestMessage(new HttpMethod(method), path)
+        {
+            Content = method == "POST" ? JsonContent.Create(new { }) : null
+        });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task InternalRoutes_ShouldBeForbidden_ForInvoiceOperators()
+    {
+        using var client = Client(Token(TenantA, PlatformPermissions.InvoicesIssueOwnTenant, PlatformPermissions.InvoicesReadOwnTenant));
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync($"/internal/onboarding/tenants/{TenantA}/readiness")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync("/internal/xml-signing/sign", new { })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync("/internal/onboarding/tenants", new { })).StatusCode);
+    }
+
+    [Fact]
+    public async Task Onboarding_TenantAdmin_CannotCreateTenantsNorTouchOtherTenants()
+    {
+        using var client = Client(Token(TenantA, PlatformPermissions.SifenConfigure));
+
+        var create = await client.PostAsJsonAsync("/internal/onboarding/tenants", new { slug = "x", displayName = "X" });
+        Assert.Equal(HttpStatusCode.Forbidden, create.StatusCode);
+
+        var otherTenant = await client.PostAsJsonAsync(
+            $"/internal/onboarding/tenants/{TenantB}/fiscal-stamps",
+            new { environment = "Test", stampingNumber = "12345678", validFrom = "2020-01-01" });
+        Assert.Equal(HttpStatusCode.Forbidden, otherTenant.StatusCode);
+
+        var otherReadiness = await client.GetAsync($"/internal/onboarding/tenants/{TenantB}/readiness");
+        Assert.Equal(HttpStatusCode.Forbidden, otherReadiness.StatusCode);
+    }
+
+    [Fact]
+    public async Task Onboarding_PlatformUser_CanCreateTenants()
+    {
+        using var client = Client(Token(null, PlatformPermissions.CompaniesCreate, PlatformPermissions.SifenConfigure));
+
+        var response = await client.PostAsJsonAsync("/internal/onboarding/tenants", new { slug = "nuevo-tenant", displayName = "Nuevo" });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task XmlSigning_ShouldNotSignForArbitraryTenantIdInBody()
+    {
+        using var client = Client(Token(TenantA, PlatformPermissions.SifenConfigure));
+
+        var response = await client.PostAsJsonAsync(
+            "/internal/xml-signing/sign",
+            new { tenantId = TenantB, environment = "Test", documentId = "x", xml = "<a/>" });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task XmlSigning_PlatformUserWithoutExplicitTenant_IsForbidden()
+    {
+        using var client = Client(Token(null, PlatformPermissions.SifenConfigure, PlatformPermissions.InvoicesIssueAnyTenant));
+
+        var response = await client.PostAsJsonAsync(
+            "/internal/xml-signing/sign",
+            new { tenantId = TenantB, environment = "Test", documentId = "x", xml = "<a/>" });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task XmlSigning_PlatformUserWithExplicitTenantHeader_PassesAuthorization()
+    {
+        // Excepcion explicita y registrada: superadmin con invoices.issue.any-tenant indica el tenant por cabecera y coincide con el body.
+        using var client = Client(Token(null, PlatformPermissions.SifenConfigure, PlatformPermissions.InvoicesIssueAnyTenant), tenantHeader: TenantB);
+
+        var response = await client.PostAsJsonAsync(
+            "/internal/xml-signing/sign",
+            new { tenantId = TenantB, environment = "Test", documentId = "x", xml = "<a/>" });
+
+        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    // ---- Idempotency-Key y campos fiscales ----
+
+    [Fact]
+    public async Task CreateInvoice_ShouldRejectRequestsWithoutIdempotencyKey()
+    {
+        using var client = Client(Token(TenantA, PlatformPermissions.InvoicesIssueOwnTenant));
+
+        var response = await client.PostAsJsonAsync("/api/fe/invoices", new
+        {
+            receiverName = "Cliente",
+            receiverDocument = "80099999",
+            items = new[] { new { description = "x", quantity = 1, unitPrice = 100, vatRate = 10 } }
+        });
+
+        Assert.True(response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.UnprocessableEntity, response.StatusCode.ToString());
+    }
 }

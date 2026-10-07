@@ -174,9 +174,8 @@ public sealed class FacturaXmlPreSubmissionValidatorTests
             "80099999",
             InvoiceCurrency.PYG,
             InvoiceSaleCondition.Cash,
-            [
-                new GenerateFacturaXmlItemInput("Servicio mensual", 1, 100000m, InvoiceVatType.Vat10)
-            ]);
+            TestFiscal.Model(("Servicio mensual", 1m, 100000m, InvoiceVatType.Vat10)),
+            TestFiscal.Descriptions(("Servicio mensual", 1m, 100000m, InvoiceVatType.Vat10)));
     }
 
     private static async Task<string> WriteTempSchemaAsync(string content)

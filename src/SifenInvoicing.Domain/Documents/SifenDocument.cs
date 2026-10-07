@@ -168,6 +168,17 @@ public sealed class SifenDocument : TenantScopedEntity
 
     public DateTimeOffset? FinalizedAt { get; private set; }
 
+    /// <summary>dNumTim del timbrado con el que se numero el documento (null en documentos previos a la numeracion por timbrado).</summary>
+    public string? StampingNumber { get; private set; }
+
+    public Guid? NumberingSequenceId { get; private set; }
+
+    public void SetFiscalTrace(string stampingNumber, Guid numberingSequenceId)
+    {
+        StampingNumber = stampingNumber;
+        NumberingSequenceId = numberingSequenceId;
+    }
+
     public static SifenDocument CreateInvoice(
         Guid tenantId,
         SifenEnvironmentType environment,
