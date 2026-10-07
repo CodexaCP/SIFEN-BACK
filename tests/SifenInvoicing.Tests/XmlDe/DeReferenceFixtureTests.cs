@@ -98,6 +98,16 @@ public sealed class DeReferenceFixtureTests
     }
 
     [Fact]
+    public void Fixture_Contado_HasPaymentEntry_AmountEqualsTotal()
+    {
+        var cond = De(DeFixtures.MinimalDe01()).Element(DeFixtures.Ns + "gDtipDE")!.Element(DeFixtures.Ns + "gCamCond")!;
+        Assert.Equal("1", V(cond, "iCondOpe"));
+        Assert.Equal("1", V(cond, "gPaConEIni", "iTiPago"));
+        Assert.Equal("PYG", V(cond, "gPaConEIni", "cMoneTiPag"));
+        Assert.Equal("2200000", V(cond, "gPaConEIni", "dMonTiPag"));
+    }
+
+    [Fact]
     public void Checker_Rejects_RemovedElement_WrongOrder_MissingMandatory()
     {
         var withRemoved = DeFixtures.MinimalDe01();

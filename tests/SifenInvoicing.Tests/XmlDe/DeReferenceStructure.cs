@@ -37,6 +37,7 @@ public static class DeReferenceStructure
         ["gDtipDE"] = new[] { "gCamFE", "gCamCond", "gCamItem", "gCamEsp", "gTransp" },
         ["gCamFE"] = new[] { "iIndPres", "dDesIndPres", "dFecEmNR", "gCompPub" },
         ["gCamCond"] = new[] { "iCondOpe", "dDCondOpe", "gPaConEIni", "gPagCred" },
+        ["gPaConEIni"] = new[] { "iTiPago", "dDesTiPag", "dMonTiPag", "cMoneTiPag", "dDMoneTiPag", "dTiCamTiPag", "gPagTarCD", "gPagCheq" },
         ["gCamItem"] = new[]
         {
             "dCodInt", "dParAranc", "dNCM", "dDncpG", "dDncpE", "dGtin", "dGtinPq", "dDesProSer", "cUniMed",
@@ -69,7 +70,15 @@ public static class DeReferenceStructure
         ["gDatGralOpe"] = new[] { "dFeEmiDE", "gOpeCom", "gEmis", "gDatRec" },
         ["gOpeCom"] = new[] { "iTImp", "cMoneOpe", "dDesMoneOpe" },
         ["gCamIVA"] = new[] { "iAfecIVA", "dDesAfecIVA", "dPropIVA", "dTasaIVA", "dBasGravIVA", "dLiqIVAItem", "dBasExe" },
-        ["gTotSub"] = new[] { "dSubExe", "dSubExo", "dSub5", "dSub10", "dTotOpe", "dTotDesc", "dTotGralOpe" },
+        ["gCamCond"] = new[] { "iCondOpe", "dDCondOpe" },   // gPaConEIni: obligatorio si iCondOpe = 1 (condicional, ver test)
+        ["gPaConEIni"] = new[] { "iTiPago", "dDesTiPag", "dMonTiPag", "cMoneTiPag", "dDMoneTiPag" },
+        // Manual F: 1-1 = dTotOpe, dTotDesc, dTotDescGlotem, dTotAntItem, dTotAnt, dPorcDescTotal, dDescTotal,
+        // dAnticipo, dRedon, dTotGralOpe (NT-1 confirma 1-1). dSubExe/dSubExo/dSub5/dSub10 y el resto son 0-1.
+        ["gTotSub"] = new[]
+        {
+            "dTotOpe", "dTotDesc", "dTotDescGlotem", "dTotAntItem", "dTotAnt", "dPorcDescTotal", "dDescTotal",
+            "dAnticipo", "dRedon", "dTotGralOpe",
+        },
     };
 
     /// <summary>Elementos retirados por NT (no deben emitirse en el DE01 v150).</summary>
