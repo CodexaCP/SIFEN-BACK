@@ -55,11 +55,8 @@ public sealed class SqlServerNumberingTests(SqlServerFixture fixture, ITestOutpu
 
     /// <summary>
     /// 50 reservas simultaneas sobre la misma secuencia, cada una con su propio DbContext/conexion/transaccion.
-    /// HALLAZGO: bajo esta carga el servicio sufre cientos de DbUpdateConcurrencyException (todos los lectores bloqueados
-    /// leen la misma version cuando se libera el bloqueo y solo uno gana por ronda) y a veces una reserva agota sus 25
-    /// intentos y responde FISCAL_NUMBERING_BUSY (503, reintentable). La prueba admite SOLO ese error, reintenta la
-    /// reserva como lo haria el cliente y exige igualmente 50 numeros unicos, consecutivos 1..50 y NextNumber == 51.
-    /// Cualquier otro error o un duplicado/hueco falla la prueba. Los conteos se imprimen en la salida.
+    /// La reserva usa UPDATE ... OUTPUT atomico: se exigen cero DbUpdateConcurrencyException, cero FISCAL_NUMBERING_BUSY,
+    /// 50 numeros unicos consecutivos 1..50 y NextNumber == 51.
     /// </summary>
     [SqlServerFact]
     public async Task Reserve_50ConcurrentRequests_ShouldYieldUniqueConsecutiveNumbers()
@@ -91,6 +88,8 @@ public sealed class SqlServerNumberingTests(SqlServerFixture fixture, ITestOutpu
 
         output.WriteLine($"DbUpdateConcurrencyException detectados por EF (reintentos optimistas): {counter.Count}");
         output.WriteLine($"Reservas que agotaron 25 intentos (FISCAL_NUMBERING_BUSY, reintentadas por el cliente): {Volatile.Read(ref busyResponses)}");
+        Assert.Equal(0, counter.Count);
+        Assert.Equal(0, Volatile.Read(ref busyResponses));
         Assert.True(errors.Count == 0, "Errores inesperados: " + string.Join(" | ", errors.Select(e => $"{e.GetType().Name}: {e.Message}")));
         Assert.Equal(parallel, numbers.Distinct().Count());
         Assert.Equal(Enumerable.Range(1, parallel).Select(n => (long)n), numbers.OrderBy(n => n));
@@ -175,33 +174,45 @@ public sealed class SqlServerNumberingTests(SqlServerFixture fixture, ITestOutpu
         Assert.Equal(3, (await fixture.ReadStateAsync(tenantId)).NextNumber);
     }
 
+    /// <summary>
+    /// Ruta atomica (UPDATE ... OUTPUT): mientras A retiene la fila sin confirmar, B y C esperan; al confirmar A
+    /// reciben 2 y 3 sin ningun DbUpdateConcurrencyException (la ruta optimista fallaba aqui).
+    /// </summary>
     [SqlServerFact]
-    public async Task Reserve_ShouldRetry_WhenAnotherTransactionCommitsBetweenReadAndUpdate()
+    public async Task Reserve_WaitersBehindOpenTransaction_ShouldGetNextNumbers_WithoutConflicts()
     {
         var tenantId = await fixture.SeedTenantAsync();
         var counter = new ConcurrencyFailureCounter();
-        var pause = new PauseBeforeFirstSaveInterceptor();
 
-        // A lee la secuencia (version 1) y se detiene justo antes de su UPDATE.
-        var a = Task.Run(async () =>
-        {
-            await using var db = fixture.NewContext(tenantId, pause, counter);
-            await using var tx = await db.Database.BeginTransactionAsync();
-            var reserved = await new EfNumberingService(db).ReserveAsync(tenantId, SifenEnvironmentType.Test, "01", Today);
-            await tx.CommitAsync();
-            return reserved.Number;
-        });
-        await pause.Reached.WaitAsync(TimeSpan.FromSeconds(30));
+        await using var dbA = fixture.NewContext(tenantId, counter);
+        await using var txA = await dbA.Database.BeginTransactionAsync();
+        var held = await new EfNumberingService(dbA).ReserveAsync(tenantId, SifenEnvironmentType.Test, "01", Today);
 
-        // B reserva y confirma en esa ventana: obtiene el numero 1.
-        var b = await ReserveInOwnTransactionAsync(tenantId, null, null);
-        Assert.Equal(1, b.Number);
+        var waiters = Enumerable.Range(0, 2).Select(_ => Task.Run(() => ReserveInOwnTransactionAsync(tenantId, counter, null))).ToList();
+        await Task.Delay(1500);
+        Assert.All(waiters, w => Assert.False(w.IsCompleted));
 
-        // A reanuda: su UPDATE usa la version vieja => DbUpdateConcurrencyException => recarga, reintenta y obtiene el 2.
-        pause.Release();
-        Assert.Equal(2, await a.WaitAsync(TimeSpan.FromSeconds(30)));
-        Assert.Equal(1, counter.Count);
-        Assert.Equal(3, (await fixture.ReadStateAsync(tenantId)).NextNumber);
+        await txA.CommitAsync();
+        var numbers = (await Task.WhenAll(waiters)).Select(r => r.Number).OrderBy(n => n).ToArray();
+
+        Assert.Equal(1, held.Number);
+        Assert.Equal(new long[] { 2, 3 }, numbers);
+        Assert.Equal(0, counter.Count);
+        Assert.Equal(4, (await fixture.ReadStateAsync(tenantId)).NextNumber);
+    }
+
+    [SqlServerFact]
+    public async Task Reserve_ExhaustedSequence_ShouldFail_AndNotAdvance()
+    {
+        var tenantId = await fixture.SeedTenantAsync(firstNumber: NumberingSequence.MaxDocumentNumber);
+
+        await using var db = fixture.NewContext(tenantId);
+        var service = new EfNumberingService(db);
+        var last = await service.ReserveAsync(tenantId, SifenEnvironmentType.Test, "01", Today);
+        Assert.Equal(NumberingSequence.MaxDocumentNumber, last.Number);
+
+        await Assert.ThrowsAsync<DomainException>(() => service.ReserveAsync(tenantId, SifenEnvironmentType.Test, "01", Today));
+        Assert.Equal(NumberingSequence.MaxDocumentNumber + 1, (await fixture.ReadStateAsync(tenantId)).NextNumber);
     }
 
     [SqlServerFact]

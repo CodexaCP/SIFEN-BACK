@@ -113,11 +113,8 @@ public sealed class SqlServerIdempotencyTests(SqlServerFixture fixture, ITestOut
     }
 
     /// <summary>
-    /// 50 emisiones simultaneas del mismo tenant/punto. El servicio agota 25 intentos optimistas por reserva
-    /// (EfNumberingService.MaxAttempts): bajo esta carga algunas solicitudes pueden recibir FISCAL_NUMBERING_BUSY (503,
-    /// reintentable). Eso es el contrato documentado: el cliente reintenta con la MISMA Idempotency-Key. La prueba
-    /// acepta unicamente ese error, reintenta con la misma key y deja constancia de cuantos 503 hubo; cualquier otro error,
-    /// numero duplicado o hueco hace fallar la prueba.
+    /// 50 emisiones simultaneas del mismo tenant/punto. La reserva usa UPDATE ... OUTPUT atomico: se exigen cero
+    /// FISCAL_NUMBERING_BUSY, numeros unicos consecutivos 1..50 y ningun otro error.
     /// </summary>
     [SqlServerFact]
     public async Task FullPipeline_50ConcurrentRequestsWithDistinctKeys_ShouldAssignUniqueConsecutiveNumbers()
@@ -149,6 +146,7 @@ public sealed class SqlServerIdempotencyTests(SqlServerFixture fixture, ITestOut
         var results = await running;
 
         output.WriteLine($"Respuestas FISCAL_NUMBERING_BUSY (503 reintentables) antes de lograr la emision: {Volatile.Read(ref busyResponses)}");
+        Assert.Equal(0, Volatile.Read(ref busyResponses));
         var errors = results.Where(r => r.Error is not null).Select(r => $"{r.Error!.GetType().Name}: {r.Error.Message}").ToList();
         Assert.True(errors.Count == 0, $"{errors.Count} errores: " + string.Join(" | ", errors.Distinct()));
 
