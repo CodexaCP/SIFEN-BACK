@@ -51,29 +51,32 @@ public sealed class SifenDbContext : DbContext
 
     private Guid? CurrentTenantId => _tenantContextAccessor.Current.ResolvedTenantId;
 
+    // Fail-closed: sin tenant resuelto (Guid.Empty) los filtros globales no devuelven filas.
+    private Guid CurrentTenantGuid => CurrentTenantId ?? Guid.Empty;
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(SifenDbContext).Assembly);
         modelBuilder.Entity<TaxpayerProfile>().HasQueryFilter(entity =>
-            !CurrentTenantId.HasValue || entity.TenantId == CurrentTenantId.Value);
+            CurrentTenantGuid != Guid.Empty && entity.TenantId == CurrentTenantGuid);
         modelBuilder.Entity<TenantSifenSettings>().HasQueryFilter(entity =>
-            !CurrentTenantId.HasValue || entity.TenantId == CurrentTenantId.Value);
+            CurrentTenantGuid != Guid.Empty && entity.TenantId == CurrentTenantGuid);
         modelBuilder.Entity<TenantCertificateMetadata>().HasQueryFilter(entity =>
-            !CurrentTenantId.HasValue || entity.TenantId == CurrentTenantId.Value);
+            CurrentTenantGuid != Guid.Empty && entity.TenantId == CurrentTenantGuid);
         modelBuilder.Entity<TenantKudeTemplateSettings>().HasQueryFilter(entity =>
-            !CurrentTenantId.HasValue || entity.TenantId == CurrentTenantId.Value);
+            CurrentTenantGuid != Guid.Empty && entity.TenantId == CurrentTenantGuid);
         modelBuilder.Entity<SifenDocument>().HasQueryFilter(entity =>
-            !CurrentTenantId.HasValue || entity.TenantId == CurrentTenantId.Value);
+            CurrentTenantGuid != Guid.Empty && entity.TenantId == CurrentTenantGuid);
         modelBuilder.Entity<SifenDocumentLine>().HasQueryFilter(entity =>
-            !CurrentTenantId.HasValue || entity.TenantId == CurrentTenantId.Value);
+            CurrentTenantGuid != Guid.Empty && entity.TenantId == CurrentTenantGuid);
         modelBuilder.Entity<SifenDocumentLog>().HasQueryFilter(entity =>
-            !CurrentTenantId.HasValue || entity.TenantId == CurrentTenantId.Value);
+            CurrentTenantGuid != Guid.Empty && entity.TenantId == CurrentTenantGuid);
         modelBuilder.Entity<SifenDocumentError>().HasQueryFilter(entity =>
-            !CurrentTenantId.HasValue || entity.TenantId == CurrentTenantId.Value);
+            CurrentTenantGuid != Guid.Empty && entity.TenantId == CurrentTenantGuid);
         modelBuilder.Entity<FeInvoiceEvent>().HasQueryFilter(entity =>
-            !CurrentTenantId.HasValue || entity.TenantId == CurrentTenantId.Value);
+            CurrentTenantGuid != Guid.Empty && entity.TenantId == CurrentTenantGuid);
         modelBuilder.Entity<FeTenantLog>().HasQueryFilter(entity =>
-            !CurrentTenantId.HasValue || entity.TenantId == CurrentTenantId.Value);
+            CurrentTenantGuid != Guid.Empty && entity.TenantId == CurrentTenantGuid);
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)

@@ -7,6 +7,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Serilog;
+using SifenInvoicing.Api.Auth;
 using SifenInvoicing.Api.Endpoints;
 using SifenInvoicing.Api.Health;
 using SifenInvoicing.Api.Middleware;
@@ -35,29 +36,35 @@ const string LocalFrontendCorsPolicy = "LocalFrontend";
 
 builder.Services.AddInfrastructure(builder.Configuration);
 var jwtSigningKey = Environment.GetEnvironmentVariable(builder.Configuration["Auth:Jwt:SigningKeyEnvironmentVariable"] ?? "SIFEN_JWT_SIGNING_KEY");
-if (!string.IsNullOrWhiteSpace(jwtSigningKey))
+if (string.IsNullOrWhiteSpace(jwtSigningKey))
 {
-    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-        .AddJwtBearer(options =>
+    if (!builder.Environment.IsDevelopment())
+    {
+        throw new InvalidOperationException(
+            "JWT signing key is required outside Development. Set the environment variable named by Auth:Jwt:SigningKeyEnvironmentVariable (default SIFEN_JWT_SIGNING_KEY).");
+    }
+
+    // Development sin clave: se usa una clave efimera para que la autenticacion siga fallando cerrada
+    // (ningun token externo valida) en vez de dejar los endpoints abiertos.
+    jwtSigningKey = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(48));
+}
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
         {
-            options.TokenValidationParameters = new TokenValidationParameters
-            {
-                ValidateIssuer = true,
-                ValidateAudience = true,
-                ValidateIssuerSigningKey = true,
-                ValidateLifetime = true,
-                ValidIssuer = builder.Configuration["Auth:Jwt:Issuer"] ?? "SifenInvoicing.Api",
-                ValidAudience = builder.Configuration["Auth:Jwt:Audience"] ?? "SifenInvoicing.Frontend",
-                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSigningKey)),
-                ClockSkew = TimeSpan.FromMinutes(2)
-            };
-        });
-}
-else
-{
-    builder.Services.AddAuthentication();
-}
-builder.Services.AddAuthorization();
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateIssuerSigningKey = true,
+            ValidateLifetime = true,
+            ValidIssuer = builder.Configuration["Auth:Jwt:Issuer"] ?? "SifenInvoicing.Api",
+            ValidAudience = builder.Configuration["Auth:Jwt:Audience"] ?? "SifenInvoicing.Frontend",
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSigningKey)),
+            ClockSkew = TimeSpan.FromMinutes(2)
+        };
+    });
+builder.Services.AddApiAuthorization();
 var configuredCorsOrigins = builder.Configuration
     .GetSection("Cors:AllowedOrigins")
     .Get<string[]>();
@@ -91,9 +98,9 @@ app.UseSerilogRequestLogging();
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseCors(LocalFrontendCorsPolicy);
+app.UseAuthentication();
 app.UseMiddleware<TenantResolutionMiddleware>();
 app.UseMiddleware<RequestAuditMiddleware>();
-app.UseAuthentication();
 app.UseAuthorization();
 app.UseStaticFiles();
 
@@ -164,14 +171,20 @@ app.MapGet("/ops/fe-diagnostic", async (
         parsedEnvironment,
         cancellationToken);
     return Results.Ok(diagnostic);
-});
+}).RequireAuthorization(ApiAuthorization.InvoicesReadPolicy);
 
 app.MapGet("/api/fe/diagnostic/{tenantId:guid}", async (
     Guid tenantId,
     string? environment,
     IOperationalReadinessReporter readinessReporter,
+    ITenantContextAccessor tenantContextAccessor,
     CancellationToken cancellationToken) =>
 {
+    if (tenantContextAccessor.Current.ResolvedTenantId != tenantId)
+    {
+        return Results.Forbid();
+    }
+
     if (!TryParseSifenEnvironment(environment, out var parsedEnvironment))
     {
         return Results.BadRequest(new { error = "Invalid SIFEN environment." });
@@ -220,13 +233,19 @@ app.MapGet("/api/fe/diagnostic/{tenantId:guid}", async (
                 diagnostic.LastSubmission.Endpoint
             }
     });
-});
+}).RequireAuthorization(ApiAuthorization.InvoicesReadPolicy);
 
 app.MapGet("/api/fe/plan/{tenantId:guid}", async (
     Guid tenantId,
     SifenDbContext dbContext,
+    ITenantContextAccessor tenantContextAccessor,
     CancellationToken cancellationToken) =>
 {
+    if (tenantContextAccessor.Current.ResolvedTenantId != tenantId)
+    {
+        return Results.Forbid();
+    }
+
     if (tenantId == Guid.Empty)
     {
         return Results.BadRequest(new
@@ -278,7 +297,7 @@ app.MapGet("/api/fe/plan/{tenantId:guid}", async (
             : $"{activeUsers} usuarios activos.",
         limitReached
     });
-});
+}).RequireAuthorization(ApiAuthorization.InvoicesReadPolicy);
 
 app.MapHealthChecks("/health/live", new HealthCheckOptions
 {
@@ -334,3 +353,4 @@ static bool TryParseSifenEnvironment(string? value, out SifenEnvironmentType env
 {
     return Enum.TryParse(value ?? "Test", true, out environment);
 }
+public partial class Program;

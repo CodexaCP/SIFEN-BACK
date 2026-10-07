@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using SifenInvoicing.Api.Auth;
 using SifenInvoicing.Application.Invoices;
 using SifenInvoicing.Application.Operations;
+using SifenInvoicing.Application.Security;
 using SifenInvoicing.Application.Tenancy;
 using SifenInvoicing.Domain.Tenants;
 using SifenInvoicing.Infrastructure.Invoices;
@@ -13,32 +15,45 @@ public static class InvoiceEndpoints
     public static IEndpointRouteBuilder MapInvoiceEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapPost("/api/fe/invoices", CreateSimpleInvoiceAsync)
-            .WithTags("FE");
+            .WithTags("FE")
+            .RequireAuthorization(ApiAuthorization.InvoicesIssuePolicy);
         app.MapGet("/api/fe/invoices/status/{cdc}", GetSimpleInvoiceStatusAsync)
-            .WithTags("FE");
+            .WithTags("FE")
+            .RequireAuthorization(ApiAuthorization.InvoicesReadPolicy);
         app.MapGet("/api/fe/invoices/{id:guid}", GetInvoiceDetailAsync)
-            .WithTags("FE");
+            .WithTags("FE")
+            .RequireAuthorization(ApiAuthorization.InvoicesReadPolicy);
         app.MapGet("/api/fe/invoices/{id:guid}/xml", DownloadSimpleInvoiceXmlAsync)
-            .WithTags("FE");
+            .WithTags("FE")
+            .RequireAuthorization(ApiAuthorization.InvoicesReadPolicy);
         app.MapGet("/api/fe/invoices/{id:guid}/kude", DownloadSimpleInvoiceKudeAsync)
-            .WithTags("FE");
+            .WithTags("FE")
+            .RequireAuthorization(ApiAuthorization.InvoicesReadPolicy);
         app.MapGet("/api/fe/invoices/{id:guid}/events", GetInvoiceEventsAsync)
-            .WithTags("FE");
+            .WithTags("FE")
+            .RequireAuthorization(ApiAuthorization.InvoicesReadPolicy);
         app.MapPost("/api/fe/invoices/{id:guid}/prepare-test", PrepareInvoiceInTestModeAsync)
-            .WithTags("FE");
+            .WithTags("FE")
+            .RequireAuthorization(ApiAuthorization.InvoicesIssuePolicy);
         app.MapGet("/api/fe/tenants/{tenantId:guid}/diagnostic", GetTenantDiagnosticAsync)
-            .WithTags("FE");
+            .WithTags("FE")
+            .RequireAuthorization(ApiAuthorization.InvoicesReadPolicy);
         app.MapGet("/api/fe/tenants/{tenantId:guid}/invoices", GetTenantInvoicesAsync)
-            .WithTags("FE");
+            .WithTags("FE")
+            .RequireAuthorization(ApiAuthorization.InvoicesReadPolicy);
         app.MapGet("/api/fe/tenants/{tenantId:guid}/logs", GetTenantLogsAsync)
-            .WithTags("FE");
+            .WithTags("FE")
+            .RequireAuthorization(ApiAuthorization.InvoicesReadPolicy);
         app.MapPost("/api/fe/invoices/kude/preview", GenerateKudePreviewHtmlAsync)
-            .WithTags("FE");
+            .WithTags("FE")
+            .RequireAuthorization(ApiAuthorization.InvoicesReadPolicy);
         app.MapPost("/api/fe/invoices/kude/preview/pdf", GenerateKudePreviewPdfAsync)
-            .WithTags("FE");
+            .WithTags("FE")
+            .RequireAuthorization(ApiAuthorization.InvoicesReadPolicy);
 
         var group = app.MapGroup("/invoice")
-            .WithTags("Invoices");
+            .WithTags("Invoices")
+            .RequireAuthorization(ApiAuthorization.InvoicesReadPolicy);
 
         group.MapGet("/", async (
             string? status,
@@ -73,7 +88,7 @@ public static class InvoiceEndpoints
                 cancellationToken);
 
             return Results.Created($"/invoice/{result.Id}", result);
-        });
+        }).RequireAuthorization(ApiAuthorization.InvoicesIssuePolicy);
 
         group.MapGet("/{id:guid}", async (
             Guid id,
@@ -117,7 +132,7 @@ public static class InvoiceEndpoints
             return File.Exists(path)
                 ? Results.File(path, "text/html; charset=utf-8")
                 : Results.NotFound();
-        });
+        }).AllowAnonymous();
 
         group.MapPost("/{id:guid}/retry", async (
             Guid id,
@@ -126,7 +141,7 @@ public static class InvoiceEndpoints
         {
             var result = await invoiceService.RetryAsync(id, cancellationToken);
             return Results.Ok(result);
-        });
+        }).RequireAuthorization(ApiAuthorization.InvoicesIssuePolicy);
 
         group.MapGet("/{id:guid}/kude", DownloadKudeAsync);
         group.MapGet("/{id:guid}/xml", DownloadXmlAsync);
@@ -508,6 +523,9 @@ public static class InvoiceEndpoints
         }
     }
 
+    private static string NumericOrZero(string? value) =>
+        !string.IsNullOrWhiteSpace(value) && value.Trim().All(char.IsAsciiDigit) ? value.Trim() : "0";
+
     private static CreateInvoiceCommand BuildCreateInvoiceCommand(CreateInvoiceRequest request)
     {
         var receiverName = request.ReceiverName ?? request.Customer?.Name ?? request.ReceptorNombre ?? string.Empty;
@@ -522,7 +540,8 @@ public static class InvoiceEndpoints
             request.EstablishmentCode ?? string.Empty,
             request.ExpeditionPointCode ?? string.Empty,
             request.DocumentNumber ?? string.Empty,
-            request.SecurityCode ?? "123456789",
+            // El codigo de seguridad lo decide siempre el servidor (Manual v150 B004); se ignora el del cliente.
+            SecurityCodeGenerator.Generate(NumericOrZero(request.DocumentNumber)),
             request.IssueDate,
             request.EmisorDireccion ?? "TEST INTERNAL",
             request.Notes,
@@ -603,7 +622,7 @@ public static class InvoiceEndpoints
     private static IResult? EnsureTenantRouteAccess(Guid tenantId, ITenantContextAccessor tenantContextAccessor)
     {
         var resolvedTenantId = tenantContextAccessor.Current.ResolvedTenantId;
-        if (resolvedTenantId.HasValue && resolvedTenantId.Value != tenantId)
+        if (!resolvedTenantId.HasValue || resolvedTenantId.Value != tenantId)
         {
             return Results.Forbid();
         }

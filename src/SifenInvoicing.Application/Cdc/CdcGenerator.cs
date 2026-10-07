@@ -3,9 +3,18 @@ using SifenInvoicing.Domain.Common;
 
 namespace SifenInvoicing.Application.Cdc;
 
+/// <summary>
+/// CDC (44 digitos). Fuente: Manual Tecnico SIFEN v150 sec. 10.1 (p.56) y ejemplo
+/// 01|44444401|7|001|001|0014528|2|20170125|1|587326098|8.
+/// Orden: tipoDoc(2) RUC(8) DV-RUC(1) est(3) punto(3) numero(7) tipoContribuyente(1)
+/// fecha AAAAMMDD(8) tipoEmision(1) codigoSeguridad(9) DV(1).
+/// DV: modulo 11, pesos 2..11 ciclicos de derecha a izquierda (verificado contra el ejemplo del Manual).
+/// PENDIENTE DE PRUEBA [TEST]: resto 0/1 -> DV 0 (decision provisoria, ver sifen-reglas-oficiales.md).
+/// PENDIENTE [DOC]: relleno de RUC de menos de 8 digitos (dRucEm admite 3-8); por ahora se exigen 8.
+/// </summary>
 public static class CdcGenerator
 {
-    private static readonly int[] Weights = [2, 3, 4, 5, 6, 7];
+    private const int MaxWeight = 11;
 
     public static string GenerateCDC(GenerateCdcInput input)
     {
@@ -62,9 +71,9 @@ public static class CdcGenerator
             puntoExpedicion,
             numeroDe,
             tipoContribuyente,
+            fechaEmision,
             tipoEmision,
-            codigoSeguridad,
-            fechaEmision);
+            codigoSeguridad);
     }
 
     private static int CalculateVerificationDigit(string baseCdc)
@@ -76,19 +85,15 @@ public static class CdcGenerator
 
         var sum = 0;
 
-        for (int baseIndex = baseCdc.Length - 1, weightIndex = 0; baseIndex >= 0; baseIndex--, weightIndex++)
+        for (int i = baseCdc.Length - 1, weight = 2; i >= 0; i--, weight = weight == MaxWeight ? 2 : weight + 1)
         {
-            sum += (baseCdc[baseIndex] - '0') * Weights[weightIndex % Weights.Length];
+            sum += (baseCdc[i] - '0') * weight;
         }
 
-        var dv = 11 - (sum % 11);
+        var remainder = sum % 11;
 
-        return dv switch
-        {
-            10 => 1,
-            11 => 0,
-            _ => dv
-        };
+        // [TEST] resto 0 o 1 -> 0 (provisorio); en otro caso 11 - resto.
+        return remainder > 1 ? 11 - remainder : 0;
     }
 
     private static string ValidateExactNumeric(string? value, int length, string fieldName)

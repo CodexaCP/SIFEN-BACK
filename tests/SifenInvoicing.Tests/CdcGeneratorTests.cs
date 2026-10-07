@@ -5,54 +5,46 @@ namespace SifenInvoicing.Tests;
 
 public sealed class CdcGeneratorTests
 {
+    // Vector oficial: Manual Tecnico v150 sec. 10.1 (p.56).
+    private const string ManualCdc = "01444444017001001001452822017012515873260988";
+
     [Fact]
-    public void GenerateCDC_ShouldReturnExpected44DigitValue()
+    public void GenerateCDC_ShouldMatchManualV150Example()
     {
         var input = new GenerateCdcInput(
-            "01",
-            "80012345",
-            "6",
-            "1",
-            "1",
-            "123",
-            "1",
-            "1",
-            "123456789",
-            "20260425");
+            "01", "44444401", "7", "001", "001", "0014528", "2", "1", "587326098", "20170125");
 
-        var cdc = CdcGenerator.GenerateCDC(input);
+        Assert.Equal(ManualCdc, CdcGenerator.GenerateCDC(input));
+        Assert.True(CdcGenerator.ValidateCDC(ManualCdc));
+    }
 
-        Assert.Equal("01800123456001001000012311123456789202604251", cdc);
+    [Fact]
+    public void ValidateCDC_ShouldRejectManualExampleWithWrongDigit()
+    {
+        Assert.False(CdcGenerator.ValidateCDC(ManualCdc[..43] + "4"));
     }
 
     [Fact]
     public void GenerateCDC_ShouldPadVariableLengthFields()
     {
         var input = new GenerateCdcInput(
-            "01",
-            "80012345",
-            "6",
-            "12",
-            "3",
-            "45",
-            "1",
-            "2",
-            "987",
-            "20260425");
+            "01", "80012345", "6", "12", "3", "45", "1", "2", "987", "20260425");
 
         var cdc = CdcGenerator.GenerateCDC(input);
 
-        Assert.StartsWith("0180012345601200300000451200000098720260425", cdc[..43]);
         Assert.Equal(44, cdc.Length);
+        Assert.StartsWith("0180012345601200300000451" + "20260425" + "2" + "000000987", cdc[..43]);
         Assert.True(CdcGenerator.ValidateCDC(cdc));
     }
 
     [Fact]
     public void ValidateCDC_ShouldReturnFalse_WhenVerificationDigitIsInvalid()
     {
-        const string invalidCdc = "01800123456001001000012311123456789202604250";
+        var cdc = CdcGenerator.GenerateCDC(new GenerateCdcInput(
+            "01", "80012345", "6", "1", "1", "123", "1", "1", "123456789", "20260425"));
+        var wrong = (cdc[43] - '0' + 1) % 10;
 
-        Assert.False(CdcGenerator.ValidateCDC(invalidCdc));
+        Assert.False(CdcGenerator.ValidateCDC(cdc[..43] + wrong));
     }
 
     [Fact]
