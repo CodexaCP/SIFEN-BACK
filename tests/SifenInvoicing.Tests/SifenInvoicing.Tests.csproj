@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <None Include="XmlDe\Samples\*.xml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="XmlDe\XsdPackage\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
