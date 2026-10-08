@@ -342,7 +342,7 @@ public sealed class EfPlatformCompanyService : IPlatformCompanyService
     public async Task DeleteCompanyAsync(DeletePlatformCompanyCommand command, CancellationToken cancellationToken = default)
     {
         var tenant = await _dbContext.Tenants.FirstOrDefaultAsync(item => item.Id == command.TenantId, cancellationToken)
-            ?? throw new DomainException("Company not found.");
+            ?? throw new DomainException("Tenant was not found.");
 
         if (command.ActorTenantId == tenant.Id)
         {
