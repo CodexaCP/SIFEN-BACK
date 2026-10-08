@@ -37,6 +37,9 @@ public static class InvoiceEndpoints
         app.MapPost("/api/fe/invoices/{id:guid}/prepare-test", PrepareInvoiceInTestModeAsync)
             .WithTags("FE")
             .RequireAuthorization(ApiAuthorization.InvoicesIssuePolicy);
+        app.MapPost("/api/fe/invoices/{id:guid}/retry", RetryInvoiceAsync)
+            .WithTags("FE")
+            .RequireAuthorization(ApiAuthorization.InvoicesIssuePolicy);
         app.MapGet("/api/fe/tenants/{tenantId:guid}/diagnostic", GetTenantDiagnosticAsync)
             .WithTags("FE")
             .RequireAuthorization(ApiAuthorization.InvoicesReadPolicy);
@@ -140,14 +143,8 @@ public static class InvoiceEndpoints
                 : Results.NotFound();
         }).AllowAnonymous();
 
-        group.MapPost("/{id:guid}/retry", async (
-            Guid id,
-            IInvoiceService invoiceService,
-            CancellationToken cancellationToken) =>
-        {
-            var result = await invoiceService.RetryAsync(id, cancellationToken);
-            return Results.Ok(result);
-        }).RequireAuthorization(ApiAuthorization.InvoicesIssuePolicy);
+        group.MapPost("/{id:guid}/retry", RetryInvoiceAsync)
+            .RequireAuthorization(ApiAuthorization.InvoicesIssuePolicy);
 
         group.MapGet("/{id:guid}/kude", DownloadKudeAsync);
         group.MapGet("/{id:guid}/xml", DownloadXmlAsync);
@@ -290,6 +287,15 @@ public static class InvoiceEndpoints
 
         var events = await traceService.GetInvoiceEventsAsync(tenantId.Value, id, cancellationToken);
         return Results.Ok(events);
+    }
+
+    public static async Task<IResult> RetryInvoiceAsync(
+        Guid id,
+        IInvoiceService invoiceService,
+        CancellationToken cancellationToken)
+    {
+        var result = await invoiceService.RetryAsync(id, cancellationToken);
+        return Results.Ok(result);
     }
 
     public static async Task<IResult> PrepareInvoiceInTestModeAsync(

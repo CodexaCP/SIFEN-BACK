@@ -278,6 +278,94 @@ public sealed class EfTenantOnboardingService : ITenantOnboardingService
         await RecordAuditAsync("tenant.certificate_metadata.registered", command.TenantId, command.TenantId, "Registered", cancellationToken);
     }
 
+    public async Task<TenantFiscalSetup> GetFiscalSetupAsync(
+        Guid tenantId,
+        SifenEnvironmentType environment,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureTenantExistsAsync(tenantId, cancellationToken);
+
+        var profile = await _dbContext.TaxpayerProfiles.IgnoreQueryFilters().AsNoTracking()
+            .Where(item => item.TenantId == tenantId && item.IsActive)
+            .OrderByDescending(item => item.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        TenantFiscalProfileView? profileView = null;
+        if (profile is not null)
+        {
+            var activities = await _dbContext.TaxpayerEconomicActivities.IgnoreQueryFilters().AsNoTracking()
+                .Where(item => item.TenantId == tenantId && item.TaxpayerProfileId == profile.Id)
+                .OrderBy(item => item.SortOrder)
+                .Select(item => new RegisterEconomicActivity(item.Code, item.Description))
+                .ToListAsync(cancellationToken);
+
+            profileView = new TenantFiscalProfileView(
+                profile.RucNumber,
+                profile.RucCheckDigit,
+                profile.LegalName,
+                profile.TradeName,
+                profile.TaxpayerType,
+                profile.Address,
+                profile.HouseNumber,
+                profile.DepartmentCode,
+                profile.DepartmentDescription,
+                profile.DistrictCode,
+                profile.DistrictDescription,
+                profile.CityCode,
+                profile.CityDescription,
+                profile.Phone,
+                profile.Email,
+                activities);
+        }
+
+        var stamps = await _dbContext.FiscalStamps.IgnoreQueryFilters().AsNoTracking()
+            .Where(item => item.TenantId == tenantId && item.Environment == environment)
+            .OrderBy(item => item.StampingNumber)
+            .ToListAsync(cancellationToken);
+        var stampNumbers = stamps.ToDictionary(item => item.Id, item => item.StampingNumber);
+
+        var sequences = await _dbContext.NumberingSequences.IgnoreQueryFilters().AsNoTracking()
+            .Where(item => item.TenantId == tenantId && item.Environment == environment)
+            .ToListAsync(cancellationToken);
+
+        var certificates = await _dbContext.TenantCertificateMetadata.IgnoreQueryFilters().AsNoTracking()
+            .Where(item => item.TenantId == tenantId && item.Environment == environment)
+            .ToListAsync(cancellationToken);
+
+        return new TenantFiscalSetup(
+            tenantId,
+            environment,
+            profileView,
+            stamps.Select(item => new TenantFiscalStampView(item.Id, item.StampingNumber, item.ValidFrom, item.ValidTo, item.IsActive)).ToList(),
+            sequences
+                .OrderBy(item => item.EstablishmentCode).ThenBy(item => item.ExpeditionPointCode).ThenBy(item => item.DocumentTypeCode)
+                .Select(item => new TenantNumberingSequenceView(
+                    item.Id,
+                    stampNumbers.GetValueOrDefault(item.FiscalStampId, string.Empty),
+                    item.DocumentTypeCode,
+                    item.EstablishmentCode,
+                    item.ExpeditionPointCode,
+                    item.Series,
+                    item.NextNumber,
+                    item.IsActive))
+                .ToList(),
+            certificates
+                .OrderBy(item => item.Purpose).ThenBy(item => item.Alias)
+                .Select(item => new TenantCertificateView(
+                    item.Id,
+                    item.Purpose,
+                    item.Alias,
+                    item.Subject,
+                    item.FingerprintSha256,
+                    item.SerialNumber,
+                    item.CertificateSecretReference,
+                    item.CertificatePasswordSecretReference,
+                    item.ValidFrom,
+                    item.ValidTo,
+                    item.IsActive))
+                .ToList());
+    }
+
     public async Task<TenantReadinessReport> GetReadinessAsync(
         Guid tenantId,
         SifenEnvironmentType environment,

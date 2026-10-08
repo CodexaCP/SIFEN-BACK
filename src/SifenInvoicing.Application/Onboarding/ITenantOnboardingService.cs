@@ -32,6 +32,11 @@ public interface ITenantOnboardingService
         RegisterCertificateMetadataCommand command,
         CancellationToken cancellationToken = default);
 
+    Task<TenantFiscalSetup> GetFiscalSetupAsync(
+        Guid tenantId,
+        SifenEnvironmentType environment,
+        CancellationToken cancellationToken = default);
+
     Task<TenantReadinessReport> GetReadinessAsync(
         Guid tenantId,
         SifenEnvironmentType environment,

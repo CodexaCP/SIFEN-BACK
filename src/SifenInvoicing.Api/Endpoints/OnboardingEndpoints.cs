@@ -198,6 +198,21 @@ public static class OnboardingEndpoints
             return Results.NoContent();
         });
 
+        group.MapGet("/tenants/{tenantId:guid}/fiscal-setup", async (
+            Guid tenantId,
+            string? environment,
+            ITenantOnboardingService onboardingService,
+            CancellationToken cancellationToken) =>
+        {
+            if (!TryParseEnvironment(environment ?? "Test", out var parsedEnvironment))
+            {
+                return Results.BadRequest(new { error = "Invalid SIFEN environment." });
+            }
+
+            var setup = await onboardingService.GetFiscalSetupAsync(tenantId, parsedEnvironment, cancellationToken);
+            return Results.Ok(setup);
+        });
+
         group.MapGet("/tenants/{tenantId:guid}/readiness", async (
             Guid tenantId,
             string? environment,

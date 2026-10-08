@@ -195,6 +195,28 @@ public sealed partial class InvoiceServiceTests
         new(new SifenInvoicing.Application.Onboarding.RegisterFiscalProfileCommand(
             tenantId, 2, "CALLE 1 CASI CALLE 2", "0", "1", "CAPITAL", null, null, "1", "ASUNCION (DISTRITO)", "021123456", "correo@correo.com", activities));
 
+    [Fact]
+    public async Task GetFiscalSetup_ReturnsRegisteredDataOnlyForTheTenant()
+    {
+        var shared = new AsyncLocalTenantContextAccessor();
+        var a = await CreateFiscalFixtureAsync(sharedAccessor: shared);
+        var b = await CreateFiscalFixtureAsync(sharedAccessor: shared, sharedDb: a.Db);
+        var onboarding = new SifenInvoicing.Infrastructure.Onboarding.EfTenantOnboardingService(a.Db, new NullAuditTrail(), new SystemClock(), null!, null!);
+
+        var setup = await onboarding.GetFiscalSetupAsync(a.TenantId, SifenEnvironmentType.Test);
+
+        Assert.NotNull(setup.Profile);
+        Assert.NotEmpty(setup.Profile!.EconomicActivities);
+        var stamp = Assert.Single(setup.Stamps);
+        var sequence = Assert.Single(setup.NumberingSequences);
+        Assert.Equal(stamp.StampingNumber, sequence.StampingNumber);
+        var certificate = Assert.Single(setup.Certificates);
+        Assert.Equal("config:certificate", certificate.CertificateSecretReference);
+        var otherStampIds = await b.Db.FiscalStamps.IgnoreQueryFilters().Where(item => item.TenantId == b.TenantId).Select(item => item.Id).ToListAsync();
+        Assert.DoesNotContain(setup.Stamps, item => otherStampIds.Contains(item.Id));
+        Assert.Empty((await onboarding.GetFiscalSetupAsync(a.TenantId, SifenEnvironmentType.Production)).Stamps);
+    }
+
     private sealed record FiscalCall(SifenInvoicing.Application.Onboarding.RegisterFiscalProfileCommand Command)
     {
         public void Apply(SifenInvoicing.Infrastructure.Onboarding.EfTenantOnboardingService service) =>
