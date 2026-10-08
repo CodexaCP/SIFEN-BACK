@@ -220,6 +220,39 @@ public sealed class ExceptionHandlingMiddleware
                 false);
         }
 
+        if (ContainsAny(message, "No puedes eliminar tu propia compania"))
+        {
+            return (
+                StatusCodes.Status409Conflict,
+                "COMPANY_DELETE_OWN_TENANT",
+                "Configuration",
+                "No puedes eliminar la compania a la que pertenece tu usuario.",
+                "Elimina la compania desde otro usuario de plataforma.",
+                false);
+        }
+
+        if (ContainsAny(message, "La confirmacion no coincide con el slug"))
+        {
+            return (
+                StatusCodes.Status400BadRequest,
+                "COMPANY_DELETE_CONFIRMATION_MISMATCH",
+                "Configuration",
+                "La confirmacion no coincide con el slug de la compania.",
+                "Escribe el slug exacto de la compania para confirmar.",
+                false);
+        }
+
+        if (ContainsAny(message, "documentos en produccion"))
+        {
+            return (
+                StatusCodes.Status409Conflict,
+                "COMPANY_DELETE_HAS_PRODUCTION_DOCUMENTS",
+                "Configuration",
+                "La compania tiene documentos emitidos en produccion y no se puede eliminar.",
+                "Suspende la compania desde su plan en lugar de eliminarla.",
+                false);
+        }
+
         if (ContainsAny(message, "usuarios activos"))
         {
             return (

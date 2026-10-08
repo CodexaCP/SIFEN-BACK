@@ -230,6 +230,30 @@ public sealed class PlatformCompanyServiceTests
         Assert.DoesNotContain(users.Users, item => item.Email == "admin-b@tenant.local");
     }
 
+    [Fact]
+    public async Task DeleteCompanyAsync_ShouldRemoveTenantAndItsData_WhenConfirmed()
+    {
+        await using var dbContext = CreateDbContext();
+        var service = CreateService(dbContext);
+        var keep = await service.CreateCompanyAsync(new CreatePlatformCompanyCommand("keep-co", "Keep", "Plan base", 150, 5));
+        var target = await service.CreateCompanyAsync(new CreatePlatformCompanyCommand("drop-co", "Drop", "Plan base", 150, 5));
+        dbContext.TaxpayerProfiles.Add(SifenInvoicing.Domain.Tenants.TaxpayerProfile.Create(target.Id, "80012345", "6", "Drop SA"));
+        dbContext.TaxpayerProfiles.Add(SifenInvoicing.Domain.Tenants.TaxpayerProfile.Create(keep.Id, "80054321", "1", "Keep SA"));
+        await dbContext.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<DomainException>(() =>
+            service.DeleteCompanyAsync(new DeletePlatformCompanyCommand(target.Id, "otro", null)));
+        await Assert.ThrowsAsync<DomainException>(() =>
+            service.DeleteCompanyAsync(new DeletePlatformCompanyCommand(target.Id, "drop-co", target.Id)));
+
+        await service.DeleteCompanyAsync(new DeletePlatformCompanyCommand(target.Id, "drop-co", keep.Id));
+
+        Assert.False(await dbContext.Tenants.AnyAsync(item => item.Id == target.Id));
+        Assert.True(await dbContext.Tenants.AnyAsync(item => item.Id == keep.Id));
+        var profiles = await dbContext.TaxpayerProfiles.IgnoreQueryFilters().ToListAsync();
+        Assert.All(profiles, item => Assert.Equal(keep.Id, item.TenantId));
+    }
+
     private static EfPlatformCompanyService CreateService(SifenDbContext dbContext)
     {
         return new EfPlatformCompanyService(

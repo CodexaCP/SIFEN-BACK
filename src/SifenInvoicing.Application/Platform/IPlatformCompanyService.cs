@@ -16,5 +16,7 @@ public interface IPlatformCompanyService
 
     Task<PlatformCompanyUserSummary> CreateCompanyUserAsync(CreatePlatformTenantUserCommand command, CancellationToken cancellationToken = default);
 
+    Task DeleteCompanyAsync(DeletePlatformCompanyCommand command, CancellationToken cancellationToken = default);
+
     Task<PlatformCompanyUserSummary> UpdateCompanyUserAsync(UpdatePlatformTenantUserCommand command, CancellationToken cancellationToken = default);
 }

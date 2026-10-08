@@ -339,6 +339,76 @@ public sealed class EfPlatformCompanyService : IPlatformCompanyService
         }
     }
 
+    public async Task DeleteCompanyAsync(DeletePlatformCompanyCommand command, CancellationToken cancellationToken = default)
+    {
+        var tenant = await _dbContext.Tenants.FirstOrDefaultAsync(item => item.Id == command.TenantId, cancellationToken)
+            ?? throw new DomainException("Company not found.");
+
+        if (command.ActorTenantId == tenant.Id)
+        {
+            throw new DomainException("No puedes eliminar tu propia compania.");
+        }
+
+        if (!string.Equals(command.ConfirmationSlug?.Trim(), tenant.Slug, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new DomainException("La confirmacion no coincide con el slug de la compania.");
+        }
+
+        var hasProductionDocuments = await _dbContext.Documents.IgnoreQueryFilters()
+            .AnyAsync(item => item.TenantId == tenant.Id && item.Environment == SifenEnvironmentType.Production, cancellationToken);
+        if (hasProductionDocuments)
+        {
+            throw new DomainException("La compania tiene documentos en produccion y no se puede eliminar.");
+        }
+
+        var tenantId = tenant.Id;
+        await using IDbContextTransaction? transaction = _dbContext.Database.IsRelational()
+            ? await _dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+
+        // Hijos antes que padres para respetar las FK Restrict.
+        await DeleteTenantRowsAsync(_dbContext.DocumentLines, tenantId, cancellationToken);
+        await DeleteTenantRowsAsync(_dbContext.DocumentLogs, tenantId, cancellationToken);
+        await DeleteTenantRowsAsync(_dbContext.DocumentErrors, tenantId, cancellationToken);
+        await DeleteTenantRowsAsync(_dbContext.FeInvoiceEvents, tenantId, cancellationToken);
+        await DeleteTenantRowsAsync(_dbContext.FeTenantLogs, tenantId, cancellationToken);
+        await DeleteTenantRowsAsync(_dbContext.IdempotencyRecords, tenantId, cancellationToken);
+        await DeleteTenantRowsAsync(_dbContext.Documents, tenantId, cancellationToken);
+        await DeleteTenantRowsAsync(_dbContext.NumberingSequences, tenantId, cancellationToken);
+        await DeleteTenantRowsAsync(_dbContext.FiscalStamps, tenantId, cancellationToken);
+        await DeleteTenantRowsAsync(_dbContext.TaxpayerEconomicActivities, tenantId, cancellationToken);
+        await DeleteTenantRowsAsync(_dbContext.TaxpayerProfiles, tenantId, cancellationToken);
+        await DeleteTenantRowsAsync(_dbContext.TenantSifenSettings, tenantId, cancellationToken);
+        await DeleteTenantRowsAsync(_dbContext.TenantCertificateMetadata, tenantId, cancellationToken);
+        await DeleteTenantRowsAsync(_dbContext.TenantKudeTemplateSettings, tenantId, cancellationToken);
+
+        var users = await _dbContext.PlatformUsers.Where(item => item.TenantId == tenantId).ToListAsync(cancellationToken);
+        _dbContext.PlatformUsers.RemoveRange(users);
+        _dbContext.Tenants.Remove(tenant);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        await RecordAuditAsync("platform.company.deleted", tenantId, "Deleted", cancellationToken);
+    }
+
+    private async Task DeleteTenantRowsAsync<TEntity>(DbSet<TEntity> set, Guid tenantId, CancellationToken cancellationToken)
+        where TEntity : TenantScopedEntity
+    {
+        var query = set.IgnoreQueryFilters().Where(item => item.TenantId == tenantId);
+        if (_dbContext.Database.IsRelational())
+        {
+            await query.ExecuteDeleteAsync(cancellationToken);
+            return;
+        }
+
+        set.RemoveRange(await query.ToListAsync(cancellationToken));
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     private Task RecordAuditAsync(string eventName, Guid tenantId, string outcome, CancellationToken cancellationToken)
     {
         return _auditTrail.RecordAsync(new AuditEvent

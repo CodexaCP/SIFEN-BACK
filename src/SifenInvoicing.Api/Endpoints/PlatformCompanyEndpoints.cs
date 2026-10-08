@@ -69,6 +69,25 @@ public static class PlatformCompanyEndpoints
             return Results.Created($"/api/platform/companies/{item.Id}", item);
         });
 
+        group.MapDelete("/{tenantId:guid}", async (
+            Guid tenantId,
+            string? confirm,
+            ClaimsPrincipal user,
+            IPlatformCompanyService companyService,
+            CancellationToken cancellationToken) =>
+        {
+            if (!IsSuperAdmin(user))
+            {
+                return Results.Forbid();
+            }
+
+            Guid? actorTenantId = Guid.TryParse(user.FindFirstValue("tenantId") ?? user.FindFirstValue("companyId"), out var parsed)
+                ? parsed
+                : null;
+            await companyService.DeleteCompanyAsync(new DeletePlatformCompanyCommand(tenantId, confirm, actorTenantId), cancellationToken);
+            return Results.NoContent();
+        });
+
         group.MapPut("/{tenantId:guid}/plan", async (
             Guid tenantId,
             UpdatePlatformCompanyPlanRequest request,
