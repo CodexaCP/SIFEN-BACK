@@ -31,6 +31,11 @@ public sealed class ExceptionHandlingMiddleware
             var mapped = MapDomainException(ex);
             await WriteErrorAsync(context, mapped.HttpStatusCode, mapped.ErrorCode, mapped.Category, mapped.UserMessage, mapped.SuggestedAction, mapped.IsRetryable);
         }
+        catch (InvalidOperationException ex) when (TryMapOnboardingMessage(ex.Message, out var onboarding))
+        {
+            _logger.LogWarning(ex, "Onboarding conflict processing request.");
+            await WriteErrorAsync(context, onboarding.HttpStatusCode, onboarding.ErrorCode, onboarding.Category, onboarding.UserMessage, onboarding.SuggestedAction, onboarding.IsRetryable);
+        }
         catch (InvalidOperationException ex)
         {
             _logger.LogWarning(ex, "Invalid operation processing request.");
@@ -226,6 +231,11 @@ public sealed class ExceptionHandlingMiddleware
                 false);
         }
 
+        if (TryMapOnboardingMessage(message, out var onboarding))
+        {
+            return onboarding;
+        }
+
         return (
             StatusCodes.Status400BadRequest,
             "DOMAIN_VALIDATION_ERROR",
@@ -233,6 +243,43 @@ public sealed class ExceptionHandlingMiddleware
             "No pudimos completar la solicitud con los datos recibidos.",
             "Revisa la informacion ingresada y vuelve a intentarlo.",
             false);
+    }
+
+    // Mensajes del alta fiscal (OnboardingEndpoints / EfTenantOnboardingService / entidades de Tenants).
+    private static readonly (string Fragment, int HttpStatusCode, string ErrorCode, string UserMessage, string SuggestedAction)[] OnboardingMessages =
+    [
+        ("Taxpayer profile must be registered before", StatusCodes.Status409Conflict, "TAXPAYER_PROFILE_REQUIRED", "Primero hay que guardar RUC y razon social de la compania.", "Completa Config SIFEN y vuelve a intentarlo."),
+        ("Taxpayer profile already exists", StatusCodes.Status409Conflict, "TAXPAYER_PROFILE_ALREADY_EXISTS", "Ya existe un perfil de contribuyente para este RUC.", "Edita los datos desde Config SIFEN."),
+        ("Fiscal stamp already exists", StatusCodes.Status409Conflict, "FISCAL_STAMP_ALREADY_EXISTS", "Ya hay un timbrado registrado para este ambiente.", "No hace falta registrarlo de nuevo."),
+        ("Fiscal stamp was not found", StatusCodes.Status409Conflict, "FISCAL_STAMP_REQUIRED", "No hay un timbrado registrado con ese numero para este ambiente.", "Registra primero el timbrado y despues la numeracion."),
+        ("Numbering sequence already exists", StatusCodes.Status409Conflict, "NUMBERING_SEQUENCE_ALREADY_EXISTS", "Ya existe esa numeracion para el timbrado, establecimiento y punto de expedicion.", "No hace falta registrarla de nuevo."),
+        ("SIFEN settings already exist", StatusCodes.Status409Conflict, "SIFEN_SETTINGS_ALREADY_EXIST", "La configuracion SIFEN de este ambiente ya existe.", "Editala desde Config SIFEN."),
+        ("Certificate metadata already exists", StatusCodes.Status409Conflict, "CERTIFICATE_ALREADY_EXISTS", "Ya existe un certificado con ese alias para este ambiente y uso.", "Usa otro alias o revisa el certificado registrado."),
+        ("stampingNumber must contain exactly 8 digits", StatusCodes.Status400BadRequest, "STAMPING_NUMBER_INVALID", "El timbrado debe tener exactamente 8 digitos.", "Revisa el numero de timbrado."),
+        ("validTo cannot be earlier than validFrom", StatusCodes.Status400BadRequest, "STAMP_VALIDITY_INVALID", "La fecha de fin de vigencia no puede ser anterior a la de inicio.", "Revisa las fechas del timbrado."),
+        ("establishmentCode must contain exactly 3 digits", StatusCodes.Status400BadRequest, "ESTABLISHMENT_CODE_INVALID", "El establecimiento debe tener exactamente 3 digitos.", "Ejemplo: 001."),
+        ("expeditionPointCode must contain exactly 3 digits", StatusCodes.Status400BadRequest, "EXPEDITION_POINT_CODE_INVALID", "El punto de expedicion debe tener exactamente 3 digitos.", "Ejemplo: 001."),
+        ("documentTypeCode must contain exactly 2 digits", StatusCodes.Status400BadRequest, "DOCUMENT_TYPE_CODE_INVALID", "El tipo de documento debe tener exactamente 2 digitos.", "Revisa el tipo de documento."),
+        ("nextNumber must be between", StatusCodes.Status400BadRequest, "FIRST_NUMBER_INVALID", "El primer numero de la secuencia esta fuera de rango.", "Usa un numero entre 1 y 9999999."),
+        ("taxpayerType must be 1", StatusCodes.Status400BadRequest, "TAXPAYER_TYPE_INVALID", "El tipo de contribuyente debe ser persona fisica o persona juridica.", "Selecciona el tipo de contribuyente."),
+        ("economic activities are allowed", StatusCodes.Status400BadRequest, "ECONOMIC_ACTIVITIES_LIMIT", "Se supero la cantidad maxima de actividades economicas.", "Quita actividades y vuelve a intentarlo.")
+    ];
+
+    private static bool TryMapOnboardingMessage(
+        string message,
+        out (int HttpStatusCode, string ErrorCode, string Category, string UserMessage, string SuggestedAction, bool IsRetryable) mapped)
+    {
+        foreach (var entry in OnboardingMessages)
+        {
+            if (message.Contains(entry.Fragment, StringComparison.OrdinalIgnoreCase))
+            {
+                mapped = (entry.HttpStatusCode, entry.ErrorCode, "Configuration", entry.UserMessage, entry.SuggestedAction, false);
+                return true;
+            }
+        }
+
+        mapped = default;
+        return false;
     }
 
     private static bool ContainsAny(string message, params string[] fragments)

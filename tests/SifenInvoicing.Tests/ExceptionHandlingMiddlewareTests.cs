@@ -34,4 +34,44 @@ public sealed class ExceptionHandlingMiddlewareTests
         Assert.Equal(expectedErrorCode, body.RootElement.GetProperty("errorCode").GetString());
         Assert.Equal(expectedUserMessage, body.RootElement.GetProperty("userMessage").GetString());
     }
+
+    [Theory]
+    [InlineData("Fiscal stamp already exists for this tenant and environment.", "FISCAL_STAMP_ALREADY_EXISTS")]
+    [InlineData("Taxpayer profile must be registered before its fiscal data.", "TAXPAYER_PROFILE_REQUIRED")]
+    [InlineData("Some other invalid operation.", "INTERNAL_OPERATION_CONFLICT")]
+    public async Task InvokeAsync_ShouldMapOnboardingConflicts(string message, string expectedErrorCode)
+    {
+        var middleware = new ExceptionHandlingMiddleware(
+            _ => throw new InvalidOperationException(message),
+            NullLogger<ExceptionHandlingMiddleware>.Instance);
+        var context = new DefaultHttpContext();
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context);
+
+        context.Response.Body.Position = 0;
+        using var body = await JsonDocument.ParseAsync(context.Response.Body);
+        Assert.Equal(409, context.Response.StatusCode);
+        Assert.Equal(expectedErrorCode, body.RootElement.GetProperty("errorCode").GetString());
+    }
+
+    [Theory]
+    [InlineData("stampingNumber must contain exactly 8 digits (dNumTim).", "STAMPING_NUMBER_INVALID")]
+    [InlineData("establishmentCode must contain exactly 3 digits.", "ESTABLISHMENT_CODE_INVALID")]
+    [InlineData("taxpayerType must be 1 (persona fisica) or 2 (persona juridica).", "TAXPAYER_TYPE_INVALID")]
+    public async Task InvokeAsync_ShouldMapOnboardingValidationErrors(string message, string expectedErrorCode)
+    {
+        var middleware = new ExceptionHandlingMiddleware(
+            _ => throw new DomainException(message),
+            NullLogger<ExceptionHandlingMiddleware>.Instance);
+        var context = new DefaultHttpContext();
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context);
+
+        context.Response.Body.Position = 0;
+        using var body = await JsonDocument.ParseAsync(context.Response.Body);
+        Assert.Equal(400, context.Response.StatusCode);
+        Assert.Equal(expectedErrorCode, body.RootElement.GetProperty("errorCode").GetString());
+    }
 }
