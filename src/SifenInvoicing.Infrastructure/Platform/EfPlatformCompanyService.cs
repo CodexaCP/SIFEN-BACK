@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using SifenInvoicing.Application.Auditing;
 using SifenInvoicing.Application.Auth;
 using SifenInvoicing.Application.Diagnostics;
@@ -58,6 +59,27 @@ public sealed class EfPlatformCompanyService : IPlatformCompanyService
             throw new DomainException($"Tenant slug '{slug}' already exists.");
         }
 
+        // Validar el admin antes de persistir nada: la empresa y su admin se crean juntos o no se crea ninguno.
+        if (!string.IsNullOrWhiteSpace(command.AdminEmail))
+        {
+            if (string.IsNullOrWhiteSpace(command.AdminPassword))
+            {
+                throw new DomainException("La password inicial es obligatoria.");
+            }
+
+            var adminEmail = NormalizeEmail(command.AdminEmail);
+            var adminEmailExists = await _dbContext.PlatformUsers.IgnoreQueryFilters().AnyAsync(item => item.Email == adminEmail, cancellationToken);
+            if (adminEmailExists)
+            {
+                throw new DomainException("Ya existe un usuario con ese email.");
+            }
+        }
+
+        // (El proveedor InMemory de pruebas no soporta transacciones.)
+        await using IDbContextTransaction? transaction = _dbContext.Database.IsRelational()
+            ? await _dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+
         var tenant = Tenant.CreateSharedDatabaseTenant(
             slug,
             command.DisplayName,
@@ -77,6 +99,11 @@ public sealed class EfPlatformCompanyService : IPlatformCompanyService
                     command.AdminEmail,
                     command.AdminPassword ?? string.Empty),
                 cancellationToken);
+        }
+
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken);
         }
 
         await RecordAuditAsync("platform.company.created", tenant.Id, "Created", cancellationToken);

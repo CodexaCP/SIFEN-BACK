@@ -121,6 +121,58 @@ public sealed class PlatformCompanyServiceTests
     }
 
     [Fact]
+    public async Task CreateCompanyAsync_ShouldNotPersistTenant_WhenAdminEmailAlreadyExists()
+    {
+        await using var dbContext = CreateDbContext();
+        var service = CreateService(dbContext);
+        var existing = await service.CreateCompanyAsync(new CreatePlatformCompanyCommand(
+            "tramiya-5",
+            "TramiYa 5",
+            "Plan base",
+            150,
+            5,
+            "Admin TramiYa",
+            "admin@tramiya.local",
+            "AdminTramiYa123!"));
+
+        var exception = await Assert.ThrowsAsync<DomainException>(() => service.CreateCompanyAsync(
+            new CreatePlatformCompanyCommand(
+                "tramiya-6",
+                "TramiYa 6",
+                "Plan base",
+                150,
+                5,
+                "Admin Repetido",
+                "ADMIN@tramiya.local",
+                "AnotherPass123!")));
+
+        Assert.Equal("Ya existe un usuario con ese email.", exception.Message);
+        Assert.False(await dbContext.Tenants.IgnoreQueryFilters().AnyAsync(item => item.Slug == "tramiya-6"));
+        Assert.True(await dbContext.Tenants.IgnoreQueryFilters().AnyAsync(item => item.Id == existing.Id));
+    }
+
+    [Fact]
+    public async Task CreateCompanyAsync_ShouldNotPersistTenant_WhenAdminPasswordIsMissing()
+    {
+        await using var dbContext = CreateDbContext();
+        var service = CreateService(dbContext);
+
+        var exception = await Assert.ThrowsAsync<DomainException>(() => service.CreateCompanyAsync(
+            new CreatePlatformCompanyCommand(
+                "tramiya-7",
+                "TramiYa 7",
+                "Plan base",
+                150,
+                5,
+                "Admin TramiYa",
+                "admin7@tramiya.local",
+                " ")));
+
+        Assert.Equal("La password inicial es obligatoria.", exception.Message);
+        Assert.False(await dbContext.Tenants.IgnoreQueryFilters().AnyAsync(item => item.Slug == "tramiya-7"));
+    }
+
+    [Fact]
     public async Task CreateCompanyUserAsync_ShouldBlock_WhenActiveUsersReachPlanLimit()
     {
         await using var dbContext = CreateDbContext();

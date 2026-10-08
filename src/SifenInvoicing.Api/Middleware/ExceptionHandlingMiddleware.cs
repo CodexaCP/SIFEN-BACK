@@ -182,6 +182,50 @@ public sealed class ExceptionHandlingMiddleware
                 false);
         }
 
+        if (ContainsAny(message, "Ya existe un usuario con ese email"))
+        {
+            return (
+                StatusCodes.Status409Conflict,
+                "USER_EMAIL_ALREADY_EXISTS",
+                "Configuration",
+                "Ya existe un usuario con ese email.",
+                "Usa otro email para el usuario o administrador de la compania.",
+                false);
+        }
+
+        if (ContainsAny(message, "Tenant slug") && ContainsAny(message, "already exists"))
+        {
+            return (
+                StatusCodes.Status409Conflict,
+                "TENANT_SLUG_ALREADY_EXISTS",
+                "Configuration",
+                "Ya existe una compania con ese slug.",
+                "Usa otro slug para la nueva compania.",
+                false);
+        }
+
+        if (ContainsAny(message, "La password inicial es obligatoria"))
+        {
+            return (
+                StatusCodes.Status400BadRequest,
+                "USER_PASSWORD_REQUIRED",
+                "Configuration",
+                "La password inicial es obligatoria.",
+                "Ingresa una password inicial para el usuario.",
+                false);
+        }
+
+        if (ContainsAny(message, "usuarios activos"))
+        {
+            return (
+                StatusCodes.Status409Conflict,
+                "PLAN_USER_LIMIT_REACHED",
+                "PlanLimit",
+                "Tu plan ya alcanzo el maximo de usuarios activos.",
+                "Inactiva un usuario o actualiza el plan de la compania.",
+                false);
+        }
+
         return (
             StatusCodes.Status400BadRequest,
             "DOMAIN_VALIDATION_ERROR",
