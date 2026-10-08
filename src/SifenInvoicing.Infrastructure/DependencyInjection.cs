@@ -74,7 +74,7 @@ public static class DependencyInjection
         services.AddSingleton<SifenDeXmlBuilder>();
         services.AddDbContext<SifenDbContext>(options =>
         {
-            options.UseSqlServer(configuration.GetConnectionString("DefaultConnection"));
+            options.UseSqlServer(SifenConnectionStringResolver.Resolve(configuration));
         });
 
         return services;

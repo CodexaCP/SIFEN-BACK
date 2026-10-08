@@ -62,7 +62,7 @@ public sealed class ConfigurationOperationalReadinessReporter : IOperationalRead
         var activeBaseUrl = _configuration[$"Sifen:Environments:{activeEnvironment}:BaseUrl"];
         var certificatePath = _configuration["Sifen:Certificate:Path"];
         var certificatePasswordVariable = _configuration["Sifen:Certificate:PasswordEnvironmentVariable"];
-        var connectionString = _configuration.GetConnectionString("DefaultConnection");
+        var connectionString = SifenConnectionStringResolver.Resolve(_configuration);
 
         IReadOnlyCollection<OperationalDependencyStatus> result =
         [
