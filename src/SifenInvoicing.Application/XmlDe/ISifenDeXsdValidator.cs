@@ -15,6 +15,11 @@ public interface ISifenDeXsdValidator
     Task EnsureSignedValidAsync(string signedDeXml, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Valida el rDE FINAL (rDE{dVerFor, DE, Signature, gCamFuFD}) tal como se persistira, sin ningun relleno.
+    /// </summary>
+    Task EnsureFinalValidAsync(string finalDeXml, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Comprobacion de preparacion sin documento: el paquete XSD v150 esta desplegado y compila. Devuelve null si esta
     /// disponible o el motivo en caso contrario. No valida ni genera ningun DE.
     /// </summary>

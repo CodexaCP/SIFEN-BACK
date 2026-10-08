@@ -34,3 +34,23 @@ internal static class StructuralSignatureStub
         return document.ToString(SaveOptions.DisableFormatting);
     }
 }
+
+/// <summary>
+/// SOLO PRUEBAS. Atacher de QR para tests ajenos al QR: agrega un gCamFuFD ESTRUCTURAL (sin hash ni CSC reales) tras la
+/// Signature. Los tests de QR/CSC usan el SifenDeQrAttacher real.
+/// </summary>
+internal sealed class FakeQrAttacher : SifenInvoicing.Application.Qr.ISifenDeQrAttacher
+{
+    public Task<string> AttachAsync(
+        Guid tenantId, SifenInvoicing.Domain.Tenants.SifenEnvironmentType environment, string signedDeXml, CancellationToken cancellationToken = default)
+    {
+        var closing = signedDeXml.LastIndexOf("</rDE>", StringComparison.Ordinal);
+        if (closing < 0)
+        {
+            return Task.FromResult(signedDeXml);
+        }
+
+        var qr = "https://ekuatia.set.gov.py/consultas-test/qr?nVersion=150&amp;Id=PLACEHOLDER&amp;cHashQR=PLACEHOLDER-NOT-A-REAL-QR-FOR-STRUCTURE-TESTS-ONLY-0000000000000000000";
+        return Task.FromResult(signedDeXml.Insert(closing, $"<gCamFuFD><dCarQR>{qr}</dCarQR></gCamFuFD>"));
+    }
+}

@@ -67,7 +67,7 @@ public sealed partial class InvoiceServiceTests
             new NullAuditTrail(),
             new SystemClock(),
             new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
-            new TestFiscalClock());
+            new TestFiscalClock(), new FakeQrAttacher());
 
         var result = await service.CreateAsync(new CreateInvoiceCommand(
             Guid.NewGuid().ToString(),
@@ -128,7 +128,7 @@ public sealed partial class InvoiceServiceTests
             new NullAuditTrail(),
             new SystemClock(),
             new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
-            new TestFiscalClock());
+            new TestFiscalClock(), new FakeQrAttacher());
 
         var exception = await Assert.ThrowsAsync<UserFacingException>(() => CreateInvoiceAsync(service));
 
@@ -167,7 +167,7 @@ public sealed partial class InvoiceServiceTests
             new NullAuditTrail(),
             new SystemClock(),
             new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
-            new TestFiscalClock());
+            new TestFiscalClock(), new FakeQrAttacher());
 
         await CreateInvoiceAsync(service);
         var exception = await Assert.ThrowsAsync<UserFacingException>(() => CreateInvoiceAsync(service));
@@ -220,7 +220,7 @@ public sealed partial class InvoiceServiceTests
             new NullAuditTrail(),
             new SystemClock(),
             new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
-            new TestFiscalClock());
+            new TestFiscalClock(), new FakeQrAttacher());
 
         await service.CreateAsync(new CreateInvoiceCommand(
             Guid.NewGuid().ToString(),
@@ -292,7 +292,7 @@ public sealed partial class InvoiceServiceTests
             new NullAuditTrail(),
             new SystemClock(),
             new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
-            new TestFiscalClock());
+            new TestFiscalClock(), new FakeQrAttacher());
 
         var result = await service.CreateAsync(new CreateInvoiceCommand(
             Guid.NewGuid().ToString(),
@@ -353,7 +353,7 @@ public sealed partial class InvoiceServiceTests
             new NullAuditTrail(),
             new SystemClock(),
             new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
-            new TestFiscalClock());
+            new TestFiscalClock(), new FakeQrAttacher());
 
         var created = await CreateInvoiceAsync(service);
 
@@ -395,7 +395,7 @@ public sealed partial class InvoiceServiceTests
             new NullAuditTrail(),
             new SystemClock(),
             new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
-            new TestFiscalClock());
+            new TestFiscalClock(), new FakeQrAttacher());
 
         var created = await CreateInvoiceAsync(failedService);
 
@@ -414,7 +414,7 @@ public sealed partial class InvoiceServiceTests
             new NullAuditTrail(),
             new SystemClock(),
             new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
-            new TestFiscalClock());
+            new TestFiscalClock(), new FakeQrAttacher());
 
         var retried = await retryService.RetryAsync(created.Id);
         var stored = await retryService.GetByIdAsync(created.Id);
@@ -460,7 +460,7 @@ public sealed partial class InvoiceServiceTests
             new NullAuditTrail(),
             new SystemClock(),
             new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
-            new TestFiscalClock());
+            new TestFiscalClock(), new FakeQrAttacher());
 
         var created = await CreateInvoiceAsync(service);
 
@@ -503,7 +503,7 @@ public sealed partial class InvoiceServiceTests
             new NullAuditTrail(),
             new SystemClock(),
             new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
-            new TestFiscalClock());
+            new TestFiscalClock(), new FakeQrAttacher());
 
         var created = await CreateInvoiceAsync(failedService);
 
@@ -522,7 +522,7 @@ public sealed partial class InvoiceServiceTests
             auditTrail,
             new SystemClock(),
             new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
-            new TestFiscalClock());
+            new TestFiscalClock(), new FakeQrAttacher());
 
         await retryService.RetryAsync(created.Id);
 
@@ -565,7 +565,7 @@ public sealed partial class InvoiceServiceTests
             new NullAuditTrail(),
             new SystemClock(),
             new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
-            new TestFiscalClock());
+            new TestFiscalClock(), new FakeQrAttacher());
 
         var exception = await Assert.ThrowsAsync<UserFacingException>(() => CreateInvoiceAsync(service));
 
@@ -616,7 +616,7 @@ public sealed partial class InvoiceServiceTests
             new NullAuditTrail(),
             new SystemClock(),
             new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
-            new TestFiscalClock());
+            new TestFiscalClock(), new FakeQrAttacher());
 
         var result = await CreateInvoiceAsync(service);
         var stored = await service.GetByIdAsync(result.Id);
@@ -687,7 +687,7 @@ public sealed partial class InvoiceServiceTests
             new InvoiceKudePdfRenderer(), new ReadyTenantCertificateValidator(), new FakeXmlDocumentSigner(),
             new StubOperationalReadinessReporter(), new CountingSubmissionGateway(), new FakeResponseParser(),
             CreateConfiguration(), new NullAuditTrail(), new SystemClock(),
-            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext), new TestFiscalClock());
+            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext), new TestFiscalClock(), new FakeQrAttacher());
 
         return new Fixture(service, dbContext, tenant.Id, accessor);
     }

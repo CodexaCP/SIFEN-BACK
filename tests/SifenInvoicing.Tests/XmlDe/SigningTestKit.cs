@@ -41,7 +41,7 @@ internal sealed class TestSigningIdentity : IDisposable
     }
 }
 
-internal sealed class MapSecrets(IReadOnlyDictionary<string, byte[]> pfxByReference) : ITenantSecretProvider
+internal sealed class MapSecrets(IReadOnlyDictionary<string, byte[]> pfxByReference, IReadOnlyDictionary<string, string>? stringsByReference = null) : ITenantSecretProvider
 {
     public Task<SecretCheckResult> CheckStringSecretAsync(string secretReference, string checkName, CancellationToken cancellationToken = default)
         => Task.FromResult(new SecretCheckResult(checkName, SecretStatus.Present, "OK"));
@@ -50,7 +50,9 @@ internal sealed class MapSecrets(IReadOnlyDictionary<string, byte[]> pfxByRefere
         => Task.FromResult(new SecretCheckResult(checkName, SecretStatus.Present, "OK"));
 
     public Task<string> GetStringSecretAsync(string secretReference, CancellationToken cancellationToken = default)
-        => Task.FromResult(TestSigningIdentity.Password);
+        => stringsByReference is not null && stringsByReference.TryGetValue(secretReference, out var value)
+            ? Task.FromResult(value)
+            : Task.FromResult(TestSigningIdentity.Password);
 
     public Task<byte[]> GetBinarySecretAsync(string secretReference, CancellationToken cancellationToken = default)
         => Task.FromResult(pfxByReference[secretReference]);
@@ -85,6 +87,18 @@ internal static class SigningTestKit
             new DbContextOptionsBuilder<SifenDbContext>().UseInMemoryDatabase(databaseName ?? Guid.NewGuid().ToString()).Options,
             new SystemClock(), accessor);
     }
+
+    /// <summary>
+    /// IdCSC/CSC GENERICOS DE TEST publicados en la Guia de Pruebas de e-Kuatia (p.4, nota 5). No pertenecen a ningun
+    /// contribuyente ni son secretos reales; solo se usan en pruebas y nunca en configuracion.
+    /// </summary>
+    public const string TestIdCsc = "0001";
+    public const string GuideGenericCsc = "ABCD0000000000000000000000000000";
+    public const string CscReference = "config:csc";
+
+    public static SifenInvoicing.Infrastructure.Qr.SifenDeQrAttacher SharedQrAttacher(SifenDbContext db) =>
+        new(db, new MapSecrets(new Dictionary<string, byte[]>(), new Dictionary<string, string> { [CscReference] = GuideGenericCsc }),
+            new SifenInvoicing.Application.Qr.SifenQrBuilder());
 
     private static readonly Lazy<TestSigningIdentity> Shared = new(() => new TestSigningIdentity());
 

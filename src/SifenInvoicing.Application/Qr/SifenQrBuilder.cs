@@ -28,7 +28,8 @@ public sealed record SifenQrInput(
     string DigestValueBase64,
     string IdCsc,
     string CscSecret,
-    string Version = "150");
+    string Version = "150",
+    string ReceiverParameterName = "dRucRec");
 
 /// <summary>URL con "&amp;" literal. Al insertarla en dCarQR el serializador XML la escapa (Manual 13.8.4.5).</summary>
 public sealed record SifenQrResult(string Url, string Hash);
@@ -63,13 +64,18 @@ public sealed class SifenQrBuilder : ISifenQrBuilder
             throw new DomainException("cItems debe ser al menos 1.");
         }
 
+        if (input.ReceiverParameterName is not ("dRucRec" or "dNumIDRec"))
+        {
+            throw new DomainException("El parametro del receptor del QR debe ser dRucRec o dNumIDRec (Manual v150 13.8.2).");
+        }
+
         var receiver = string.IsNullOrWhiteSpace(input.ReceiverDocument) ? "0" : input.ReceiverDocument.Trim();
 
         var data = string.Concat(
             "nVersion=", input.Version,
             "&Id=", input.Cdc,
             "&dFeEmiDE=", ToHex(input.EmissionDateTimeText),
-            "&dRucRec=", receiver,
+            "&", input.ReceiverParameterName, "=", receiver,
             "&dTotGralOpe=", Number(input.TotalGeneral),
             "&dTotIVA=", Number(input.TotalIva),
             "&cItems=", input.ItemCount.ToString(CultureInfo.InvariantCulture),

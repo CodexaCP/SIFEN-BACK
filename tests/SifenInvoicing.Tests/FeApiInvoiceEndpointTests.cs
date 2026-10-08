@@ -329,7 +329,7 @@ public sealed class FeApiInvoiceEndpointTests
             new NullAuditTrail(),
             new SystemClock(),
             new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
-            new TestFiscalClock());
+            new TestFiscalClock(), new FakeQrAttacher());
 
         return new TestFixture(tenant.Id, tenantAccessor, dbContext, service);
     }

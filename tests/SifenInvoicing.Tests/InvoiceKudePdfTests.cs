@@ -205,7 +205,7 @@ public sealed class InvoiceKudePdfTests
              new NullAuditTrail(),
              new SystemClock(),
              new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext),
-             new TestFiscalClock()));
+             new TestFiscalClock(), new FakeQrAttacher()));
     }
 
     private static void SetTenant(ITenantContextAccessor tenantAccessor, Guid tenantId)

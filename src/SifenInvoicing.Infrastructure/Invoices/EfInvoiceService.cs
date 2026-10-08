@@ -47,6 +47,7 @@ public sealed class EfInvoiceService : IInvoiceService
     private readonly ISystemClock _clock;
     private readonly INumberingService _numberingService;
     private readonly IFiscalClock _fiscalClock;
+    private readonly SifenInvoicing.Application.Qr.ISifenDeQrAttacher _qrAttacher;
 
     public EfInvoiceService(
         SifenDbContext dbContext,
@@ -63,7 +64,8 @@ public sealed class EfInvoiceService : IInvoiceService
         IAuditTrail auditTrail,
         ISystemClock clock,
         INumberingService numberingService,
-        IFiscalClock fiscalClock)
+        IFiscalClock fiscalClock,
+        SifenInvoicing.Application.Qr.ISifenDeQrAttacher qrAttacher)
     {
         _dbContext = dbContext;
         _tenantContextAccessor = tenantContextAccessor;
@@ -80,6 +82,7 @@ public sealed class EfInvoiceService : IInvoiceService
         _clock = clock;
         _numberingService = numberingService;
         _fiscalClock = fiscalClock;
+        _qrAttacher = qrAttacher;
     }
 
     public async Task<CreateInvoiceResult> CreateAsync(
@@ -1059,13 +1062,14 @@ public sealed class EfInvoiceService : IInvoiceService
         string unsignedXml,
         CancellationToken cancellationToken)
     {
+        string signedXml;
         try
         {
             var signed = await _xmlDocumentSigner.SignAsync(
                 new SignXmlDocumentCommand(tenantId, environment, cdc, unsignedXml),
                 cancellationToken);
             await _deXsdValidator.EnsureSignedValidAsync(signed.SignedXml, cancellationToken);
-            return signed.SignedXml;
+            signedXml = signed.SignedXml;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -1077,6 +1081,25 @@ public sealed class EfInvoiceService : IInvoiceService
                 false,
                 409,
                 $"XMLDSig signing failed before commit: {ex.Message}");
+        }
+
+        // Fase 4.5: el QR se genera DESPUES de firmar, con el DigestValue definitivo y el CSC del tenant efectivo.
+        try
+        {
+            var finalXml = await _qrAttacher.AttachAsync(tenantId, environment, signedXml, cancellationToken);
+            await _deXsdValidator.EnsureFinalValidAsync(finalXml, cancellationToken);
+            return finalXml;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new UserFacingException(
+                "QR_GENERATION_FAILED",
+                "Configuration",
+                "No pudimos generar el QR de la factura.",
+                "Revisa el IdCSC y el CSC de esta compania para el ambiente activo. No se consumio ningun numero.",
+                false,
+                409,
+                $"QR/CSC generation failed before commit: {ex.Message}");
         }
     }
 

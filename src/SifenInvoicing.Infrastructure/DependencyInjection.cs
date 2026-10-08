@@ -65,6 +65,8 @@ public static class DependencyInjection
         services.AddScoped<IXmlDocumentSigner, SifenXmlDocumentSigner>();
         services.AddScoped<IXmlSchemaValidator, XmlSchemaValidator>();
         services.AddScoped<ISifenDeXsdValidator, SifenDeXsdValidator>();
+        services.AddSingleton<SifenInvoicing.Application.Qr.ISifenQrBuilder, SifenInvoicing.Application.Qr.SifenQrBuilder>();
+        services.AddScoped<SifenInvoicing.Application.Qr.ISifenDeQrAttacher, SifenInvoicing.Infrastructure.Qr.SifenDeQrAttacher>();
         services.AddSingleton(_ => SifenDeBuilderOptionsFactory.Create(configuration));
         services.AddSingleton<SifenDeXmlBuilder>();
         services.AddDbContext<SifenDbContext>(options =>

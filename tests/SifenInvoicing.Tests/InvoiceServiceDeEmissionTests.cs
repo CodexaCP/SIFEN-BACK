@@ -314,7 +314,7 @@ public sealed partial class InvoiceServiceTests
             new InvoiceKudePdfRenderer(), new ReadyTenantCertificateValidator(), new FakeXmlDocumentSigner(),
             new StubOperationalReadinessReporter(), new CountingSubmissionGateway(), new FakeResponseParser(),
             CreateConfiguration(), new NullAuditTrail(), new SystemClock(),
-            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(db), new TestFiscalClock());
+            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(db), new TestFiscalClock(), new FakeQrAttacher());
         return Task.FromResult(service);
     }
 }

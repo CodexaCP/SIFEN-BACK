@@ -169,7 +169,7 @@ public sealed class SqlServerFixture : IAsyncLifetime
             db, accessor, DeTestKit.Builder(), DeTestKit.Xsd(), new InvoiceKudePdfRenderer(),
             new ReadyCertificateValidator(), SifenInvoicing.Tests.XmlDe.SigningTestKit.SharedSigner(db), new StubReadiness(), new CountingGateway(),
             new FakeParser(), SqlServerFakes.Configuration(), new NullAudit(), new SystemClock(),
-            numbering ?? new EfNumberingService(db), new TestFiscalClock());
+            numbering ?? new EfNumberingService(db), new TestFiscalClock(), SifenInvoicing.Tests.XmlDe.SigningTestKit.SharedQrAttacher(db));
         return new InvoiceScope(service, db, tenantId);
     }
 
@@ -193,6 +193,9 @@ public sealed class SqlServerFixture : IAsyncLifetime
         db.TenantCertificateMetadata.Add(TenantCertificateMetadata.Create(
             tenant.Id, SifenEnvironmentType.Test, CertificatePurpose.XmlSignature, "xml-signing", "CN=ACME", "ABC123", "123",
             "config:certificate", "config:password", DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(30)));
+        db.TenantSifenSettings.Add(TenantSifenSettings.Create(
+            tenant.Id, SifenEnvironmentType.Test, SifenInvoicing.Tests.XmlDe.SigningTestKit.TestIdCsc,
+            SifenInvoicing.Tests.XmlDe.SigningTestKit.CscReference, "001", "001", "1", null, null, null, null, null, null, null));
         await db.SaveChangesAsync();
         return tenant.Id;
     }

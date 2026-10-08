@@ -38,6 +38,9 @@ public sealed class SifenDeXsdValidator : ISifenDeXsdValidator
     public Task EnsureSignedValidAsync(string signedDeXml, CancellationToken cancellationToken = default)
         => ValidateAsync(WithQrPlaceholder(signedDeXml), "El DE01 firmado", cancellationToken);
 
+    public Task EnsureFinalValidAsync(string finalDeXml, CancellationToken cancellationToken = default)
+        => ValidateAsync(finalDeXml, "El DE01 final (firmado, con QR)", cancellationToken);
+
     private async Task ValidateAsync(string xml, string subject, CancellationToken cancellationToken)
     {
         var rootPath = Path.Combine(_packageDirectory, RootSchemaFile);
