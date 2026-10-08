@@ -94,7 +94,9 @@ public sealed class SqlServerRealTaxpayerPipelineTests(SqlServerFixture fixture)
         // 2) Estado persistido, leido con un contexto nuevo.
         await using var verify = fixture.NewContext(tenantId);
         var document = await verify.Documents.SingleAsync();
-        Assert.Equal("001-001-0000001", document.ExternalDocumentNumber);
+        Assert.Equal("001", document.EstablishmentCode);
+        Assert.Equal("001", document.ExpeditionPointCode);
+        Assert.Equal("0000001", document.ExternalDocumentNumber);
         Assert.Equal(Stamp, document.StampingNumber);
         Assert.Equal(SifenTransmissionState.NotSent, document.TransmissionState);
         Assert.Equal(SifenFiscalState.None, document.FiscalState);
