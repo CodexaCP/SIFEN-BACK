@@ -167,7 +167,7 @@ public sealed class SqlServerFixture : IAsyncLifetime
         var accessor = new AsyncLocalTenantContextAccessor();
         var service = new EfInvoiceService(
             db, accessor, DeTestKit.Builder(), DeTestKit.Xsd(), new InvoiceKudePdfRenderer(),
-            new ReadyCertificateValidator(), new FakeSigner(), new StubReadiness(), new CountingGateway(),
+            new ReadyCertificateValidator(), SifenInvoicing.Tests.XmlDe.SigningTestKit.SharedSigner(db), new StubReadiness(), new CountingGateway(),
             new FakeParser(), SqlServerFakes.Configuration(), new NullAudit(), new SystemClock(),
             numbering ?? new EfNumberingService(db), new TestFiscalClock());
         return new InvoiceScope(service, db, tenantId);
@@ -292,12 +292,6 @@ internal sealed class ReadyCertificateValidator : ITenantCertificateValidator
     public Task<CertificateValidationResult> ValidateAsync(TenantCertificateMetadata? metadata, CancellationToken cancellationToken = default) =>
         Task.FromResult(new CertificateValidationResult(
             true, "Certificate loaded and validated.", [new SecretCheckResult("certificate.private_key", SecretStatus.Present, "OK")]));
-}
-
-internal sealed class FakeSigner : IXmlDocumentSigner
-{
-    public Task<SignedXmlDocumentResult> SignAsync(SignXmlDocumentCommand command, CancellationToken cancellationToken = default) =>
-        Task.FromResult(new SignedXmlDocumentResult($"<signed>{command.Xml}</signed>", command.DocumentId, "c14n", "rsa-sha256", "sha256", "enveloped"));
 }
 
 internal sealed class CountingGateway : ISifenSubmissionGateway

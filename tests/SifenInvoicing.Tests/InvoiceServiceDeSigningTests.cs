@@ -103,4 +103,20 @@ public sealed partial class InvoiceServiceTests
         Assert.Empty(await check.Documents.ToListAsync());
         Assert.Equal(1, await check.NumberingSequences.Select(s => s.NextNumber).SingleAsync());
     }
+
+    [XsdPackageFact(XsdPackage.ReceptionRoot)]
+    public async Task DeFlow_SharedSigner_UsedBySqlServerIntegrationTests_SignsWithSeededCertificateReference()
+    {
+        using var scope = new SqliteScope();
+        var f = await SqliteFixtureAsync(scope);
+        f.Use();
+        var service = ServiceWithSigner(f, f.Db, SigningTestKit.SharedSigner(f.Db));
+
+        await service.CreateAsync(TwoItemCommand("shared-signer"));
+
+        await using var check = scope.NewContext(f.Accessor);
+        var doc = await check.Documents.SingleAsync();
+        Assert.NotNull(doc.SignedXmlPayload);
+        Assert.Single(XDocument.Parse(doc.SignedXmlPayload!).Root!.Elements(SigningTestKit.Ds + "Signature"));
+    }
 }

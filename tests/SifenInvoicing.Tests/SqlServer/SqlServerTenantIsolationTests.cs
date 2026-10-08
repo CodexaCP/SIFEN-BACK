@@ -119,7 +119,7 @@ public sealed class SqlServerTenantIsolationTests(SqlServerFixture fixture)
         var service = new SifenInvoicing.Infrastructure.Invoices.EfInvoiceService(
             anonymousDb, new SifenInvoicing.Infrastructure.Tenancy.AsyncLocalTenantContextAccessor(),
             DeTestKit.Builder(), DeTestKit.Xsd(),
-            new SifenInvoicing.Infrastructure.Invoices.InvoiceKudePdfRenderer(), new ReadyCertificateValidator(), new FakeSigner(),
+            new SifenInvoicing.Infrastructure.Invoices.InvoiceKudePdfRenderer(), new ReadyCertificateValidator(), SifenInvoicing.Tests.XmlDe.SigningTestKit.SharedSigner(anonymousDb),
             new StubReadiness(), new CountingGateway(), new FakeParser(), SqlServerFakes.Configuration(), new NullAudit(),
             new SifenInvoicing.Infrastructure.Diagnostics.SystemClock(),
             new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(anonymousDb), new TestFiscalClock());

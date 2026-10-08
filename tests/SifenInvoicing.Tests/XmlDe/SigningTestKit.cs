@@ -86,6 +86,16 @@ internal static class SigningTestKit
             new SystemClock(), accessor);
     }
 
+    private static readonly Lazy<TestSigningIdentity> Shared = new(() => new TestSigningIdentity());
+
+    /// <summary>
+    /// Signer REAL (SifenXmlDocumentSigner) para las pruebas de integracion SQL Server: certificado autofirmado efimero
+    /// generado en memoria una vez por proceso y entregado por <see cref="MapSecrets"/> bajo la referencia que siembra
+    /// SeedTenantAsync. No hay PFX, contrasena ni secretos en el repositorio ni en disco.
+    /// </summary>
+    public static SifenXmlDocumentSigner SharedSigner(SifenDbContext db, string certificateReference = "config:certificate") =>
+        Signer(db, new Dictionary<string, byte[]> { [certificateReference] = Shared.Value.Pfx });
+
     public static SifenXmlDocumentSigner Signer(SifenDbContext db, IReadOnlyDictionary<string, byte[]> secrets, NullAuditSink? audit = null) =>
         new(db, new MapSecrets(secrets), audit ?? new NullAuditSink(), new SystemClock());
 
