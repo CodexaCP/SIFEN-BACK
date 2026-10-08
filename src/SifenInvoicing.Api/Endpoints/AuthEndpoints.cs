@@ -48,6 +48,7 @@ public static class AuthEndpoints
                     userId = session.UserId,
                     companyId = session.CompanyId,
                     tenantId = session.TenantId,
+                    tenantName = session.TenantName,
                     fullName = session.FullName,
                     displayName = session.FullName,
                     role = session.Role,

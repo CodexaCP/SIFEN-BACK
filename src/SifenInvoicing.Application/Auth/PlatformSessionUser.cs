@@ -7,4 +7,5 @@ public sealed record PlatformSessionUser(
     string FullName,
     string Email,
     string Role,
-    IReadOnlyCollection<string> Permissions);
+    IReadOnlyCollection<string> Permissions,
+    string? TenantName = null);

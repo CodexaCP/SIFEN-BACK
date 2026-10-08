@@ -59,6 +59,13 @@ public sealed class PlatformAuthService : IPlatformAuthService
             return null;
         }
 
+        var tenantName = user.TenantId.HasValue
+            ? await _dbContext.Tenants.AsNoTracking()
+                .Where(tenant => tenant.Id == user.TenantId.Value)
+                .Select(tenant => tenant.DisplayName)
+                .FirstOrDefaultAsync(cancellationToken)
+            : null;
+
         return new PlatformSessionUser(
             user.Id,
             0,
@@ -66,7 +73,8 @@ public sealed class PlatformAuthService : IPlatformAuthService
             user.FullName,
             user.Email,
             user.Role.Name,
-            user.Role.Permissions);
+            user.Role.Permissions,
+            tenantName);
     }
 
     private string CreateToken(Domain.PlatformAuth.PlatformUser user)
