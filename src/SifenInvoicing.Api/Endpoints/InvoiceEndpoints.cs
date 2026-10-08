@@ -185,7 +185,10 @@ public static class InvoiceEndpoints
                 userMessage = invoice.UserMessage,
                 suggestedAction = invoice.SuggestedAction,
                 isRetryable = invoice.IsRetryable,
-                correlationId = invoice.CorrelationId
+                correlationId = invoice.CorrelationId,
+                transmissionState = invoice.TransmissionState,
+                fiscalState = invoice.FiscalState,
+                sifenTrackingId = invoice.SifenTrackingId
             });
     }
 
@@ -364,7 +367,10 @@ public static class InvoiceEndpoints
                 item.IsRetryable,
                 item.LastErrorMessage,
                 item.CreatedAt,
-                item.UpdatedAt))
+                item.UpdatedAt,
+                item.Cdc,
+                item.TransmissionState,
+                item.FiscalState))
             .ToArrayAsync(cancellationToken);
 
         var totalPages = totalCount == 0

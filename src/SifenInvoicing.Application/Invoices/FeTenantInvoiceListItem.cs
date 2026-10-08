@@ -1,3 +1,5 @@
+using SifenInvoicing.Domain.Documents;
+
 namespace SifenInvoicing.Application.Invoices;
 
 public sealed record FeTenantInvoiceListItem(
@@ -13,4 +15,7 @@ public sealed record FeTenantInvoiceListItem(
     bool IsRetryable,
     string? LastErrorMessage,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? UpdatedAt);
+    DateTimeOffset? UpdatedAt,
+    string Cdc,
+    SifenTransmissionState TransmissionState,
+    SifenFiscalState FiscalState);

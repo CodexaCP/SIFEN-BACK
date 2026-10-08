@@ -8,6 +8,8 @@ public sealed record InvoiceDetail(
     Guid TenantId,
     SifenEnvironmentType Environment,
     SifenDocumentStatus Status,
+    SifenTransmissionState TransmissionState,
+    SifenFiscalState FiscalState,
     string Cdc,
     string TestCdc,
     string? TestQrText,

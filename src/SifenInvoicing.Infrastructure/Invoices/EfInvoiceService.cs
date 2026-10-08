@@ -770,6 +770,8 @@ public sealed class EfInvoiceService : IInvoiceService
             document.TenantId,
             document.Environment,
             document.Status,
+            document.TransmissionState,
+            document.FiscalState,
             document.Cdc,
             document.TestCdc,
             document.TestQrText,

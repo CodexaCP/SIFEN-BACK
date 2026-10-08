@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
@@ -22,6 +24,9 @@ namespace SifenInvoicing.Tests;
 
 public sealed class FeOperationalInvoicePanelEndpointTests
 {
+    private const string CdcTenantA = "01800123456001001000012311123456789202604251";
+    private const string CdcTenantB = "01800123456001001000012311123456789202604252";
+
     [Fact]
     public async Task GetTenantInvoicesAsync_ShouldReturnOnlyInvoicesForTenant()
     {
@@ -236,6 +241,146 @@ public sealed class FeOperationalInvoicePanelEndpointTests
         Assert.All(detail.TenantLogs, item => Assert.DoesNotContain("secret", item.TechnicalDetail ?? string.Empty, StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public async Task GetTenantInvoicesAsync_ShouldExposeCdcAndSifenStates()
+    {
+        var fixture = await CreateFixtureAsync();
+        var invoice = SeedInvoice(fixture.DbContext, fixture.TenantA.Id, "0000001", "Cliente A", FeInvoiceInternalStatus.DRAFT, CdcTenantA);
+        invoice.SetSifenStates(SifenTransmissionState.Delivered, SifenFiscalState.ApprovedWithObservations);
+        SeedInvoice(fixture.DbContext, fixture.TenantB.Id, "0000002", "Cliente B", FeInvoiceInternalStatus.DRAFT, CdcTenantB);
+        await fixture.DbContext.SaveChangesAsync();
+        SetTenant(fixture.TenantAccessor, fixture.TenantA.Id);
+
+        var result = await InvoiceEndpoints.GetTenantInvoicesAsync(
+            fixture.TenantA.Id,
+            null,
+            null,
+            null,
+            null,
+            1,
+            20,
+            fixture.TenantAccessor,
+            fixture.DbContext,
+            CancellationToken.None);
+
+        var ok = Assert.IsAssignableFrom<IValueHttpResult>(result);
+        var page = Assert.IsType<FeTenantInvoicePage>(ok.Value);
+        var item = Assert.Single(page.Items);
+        Assert.Equal(CdcTenantA, item.Cdc);
+        Assert.Equal("corr-0000001", item.CorrelationId);
+        Assert.Equal(SifenTransmissionState.Delivered, item.TransmissionState);
+        Assert.Equal(SifenFiscalState.ApprovedWithObservations, item.FiscalState);
+
+        var json = JsonSerializer.Serialize(page, ApiJsonOptions());
+        Assert.Contains($"\"cdc\":\"{CdcTenantA}\"", json);
+        Assert.Contains("\"transmissionState\":\"Delivered\"", json);
+        Assert.Contains("\"fiscalState\":\"ApprovedWithObservations\"", json);
+        Assert.DoesNotContain(CdcTenantB, json);
+    }
+
+    [Fact]
+    public async Task GetTenantInvoicesAsync_ShouldForbidRouteOfOtherTenant()
+    {
+        var fixture = await CreateFixtureAsync();
+        SeedInvoice(fixture.DbContext, fixture.TenantB.Id, "0000002", "Cliente B", FeInvoiceInternalStatus.DRAFT, CdcTenantB);
+        await fixture.DbContext.SaveChangesAsync();
+        SetTenant(fixture.TenantAccessor, fixture.TenantA.Id);
+
+        var result = await InvoiceEndpoints.GetTenantInvoicesAsync(
+            fixture.TenantB.Id,
+            null,
+            null,
+            null,
+            null,
+            1,
+            20,
+            fixture.TenantAccessor,
+            fixture.DbContext,
+            CancellationToken.None);
+
+        Assert.IsType<ForbidHttpResult>(result);
+    }
+
+    [Fact]
+    public async Task GetInvoiceDetailAsync_ShouldExposeCdcAndSifenStatesKeepingExistingFields()
+    {
+        var fixture = await CreateFixtureAsync();
+        var invoice = SeedInvoice(fixture.DbContext, fixture.TenantA.Id, "0000001", "Cliente A", FeInvoiceInternalStatus.VALIDATED_TEST, CdcTenantA);
+        invoice.MarkAccepted("PROT-TEST-1", "TEST-CODE", "Mensaje de prueba", null, DateTimeOffset.UtcNow);
+        invoice.SetSifenStates(SifenTransmissionState.Delivered, SifenFiscalState.Approved);
+        await fixture.DbContext.SaveChangesAsync();
+        SetTenant(fixture.TenantAccessor, fixture.TenantA.Id);
+
+        var result = await InvoiceEndpoints.GetInvoiceDetailAsync(
+            invoice.Id,
+            fixture.TenantAccessor,
+            fixture.InvoiceService,
+            CancellationToken.None);
+
+        var ok = Assert.IsAssignableFrom<IValueHttpResult>(result);
+        var detail = Assert.IsType<InvoiceDetail>(ok.Value);
+        Assert.Equal(CdcTenantA, detail.Cdc);
+        Assert.Equal(SifenTransmissionState.Delivered, detail.TransmissionState);
+        Assert.Equal(SifenFiscalState.Approved, detail.FiscalState);
+        Assert.Equal(SifenDocumentStatus.Accepted, detail.Status);
+        Assert.Equal("TEST-CODE", detail.StatusCode);
+        Assert.Equal("Mensaje de prueba", detail.StatusMessage);
+        Assert.Equal("PROT-TEST-1", detail.SifenTrackingId);
+        Assert.Equal("corr-0000001", detail.CorrelationId);
+        Assert.Equal("VALIDATED_TEST", detail.InternalStatus);
+
+        var json = JsonSerializer.Serialize(detail, ApiJsonOptions());
+        Assert.Contains("\"transmissionState\":\"Delivered\"", json);
+        Assert.Contains("\"fiscalState\":\"Approved\"", json);
+    }
+
+    [Fact]
+    public async Task GetSimpleInvoiceStatusAsync_ShouldNotExposeInvoiceFromOtherTenant()
+    {
+        var fixture = await CreateFixtureAsync();
+        var otherTenantInvoice = SeedInvoice(fixture.DbContext, fixture.TenantB.Id, "0000002", "Cliente B", FeInvoiceInternalStatus.DRAFT, CdcTenantB);
+        otherTenantInvoice.SetSifenStates(SifenTransmissionState.Delivered, SifenFiscalState.Approved);
+        await fixture.DbContext.SaveChangesAsync();
+        SetTenant(fixture.TenantAccessor, fixture.TenantA.Id);
+
+        var result = await InvoiceEndpoints.GetSimpleInvoiceStatusAsync(
+            CdcTenantB,
+            fixture.InvoiceService,
+            CancellationToken.None);
+
+        Assert.IsType<NotFound>(result);
+    }
+
+    [Fact]
+    public async Task GetSimpleInvoiceStatusAsync_ShouldExposeSifenStatesForOwnTenant()
+    {
+        var fixture = await CreateFixtureAsync();
+        var invoice = SeedInvoice(fixture.DbContext, fixture.TenantB.Id, "0000002", "Cliente B", FeInvoiceInternalStatus.DRAFT, CdcTenantB);
+        invoice.SetSifenStates(SifenTransmissionState.NotDelivered, SifenFiscalState.None);
+        await fixture.DbContext.SaveChangesAsync();
+        SetTenant(fixture.TenantAccessor, fixture.TenantB.Id);
+
+        var result = await InvoiceEndpoints.GetSimpleInvoiceStatusAsync(
+            CdcTenantB,
+            fixture.InvoiceService,
+            CancellationToken.None);
+
+        var ok = Assert.IsAssignableFrom<IValueHttpResult>(result);
+        var json = JsonSerializer.Serialize(ok.Value!, ApiJsonOptions());
+        Assert.Contains($"\"cdc\":\"{CdcTenantB}\"", json);
+        Assert.Contains("\"transmissionState\":\"NotDelivered\"", json);
+        Assert.Contains("\"fiscalState\":\"None\"", json);
+        Assert.Contains("\"sifenTrackingId\":null", json);
+    }
+
+    // Igual que la configuracion de la API (Program.cs): defaults web + JsonStringEnumConverter.
+    private static JsonSerializerOptions ApiJsonOptions()
+    {
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        options.Converters.Add(new JsonStringEnumConverter());
+        return options;
+    }
+
     private static async Task<EndpointFixture> CreateFixtureAsync()
     {
         var tenantAccessor = new AsyncLocalTenantContextAccessor();
@@ -274,12 +419,13 @@ public sealed class FeOperationalInvoicePanelEndpointTests
         Guid tenantId,
         string number,
         string customerName,
-        FeInvoiceInternalStatus internalStatus)
+        FeInvoiceInternalStatus internalStatus,
+        string cdc = CdcTenantA)
     {
         var invoice = SifenDocument.CreateInvoice(
             tenantId,
             SifenEnvironmentType.Test,
-            "01800123456001001000012311123456789202604251",
+            cdc,
             "Factura electrónica",
             number,
             "001",

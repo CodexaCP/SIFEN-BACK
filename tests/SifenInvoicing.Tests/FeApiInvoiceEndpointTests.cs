@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Http;
@@ -233,6 +235,48 @@ public sealed class FeApiInvoiceEndpointTests
     }
 
     [Fact]
+    public async Task GetSimpleInvoiceStatusAsync_ShouldExposeTransmissionFiscalStateAndTrackingId()
+    {
+        var service = new StubInvoiceService(BuildInvoiceDetail(SifenDocumentStatus.Accepted));
+
+        var result = await InvoiceEndpoints.GetSimpleInvoiceStatusAsync(
+            "01800123456001001000012311123456789202604251",
+            service,
+            CancellationToken.None);
+
+        var ok = Assert.IsAssignableFrom<IValueHttpResult>(result);
+        var value = ok.Value!;
+        Assert.Equal(SifenTransmissionState.Delivered, ReadAnonymousProperty<SifenTransmissionState>(value, "transmissionState"));
+        Assert.Equal(SifenFiscalState.Approved, ReadAnonymousProperty<SifenFiscalState>(value, "fiscalState"));
+        Assert.Equal("123456789012345", ReadAnonymousProperty<string>(value, "sifenTrackingId"));
+        Assert.Equal("01800123456001001000012311123456789202604251", ReadAnonymousProperty<string>(value, "cdc"));
+        Assert.Equal("aprobado", ReadAnonymousProperty<string>(value, "status"));
+        Assert.Equal("0300", ReadAnonymousProperty<string>(value, "statusCode"));
+
+        var json = JsonSerializer.Serialize(value, ApiJsonOptions());
+        Assert.Contains("\"transmissionState\":\"Delivered\"", json);
+        Assert.Contains("\"fiscalState\":\"Approved\"", json);
+        Assert.Contains("\"sifenTrackingId\":\"123456789012345\"", json);
+    }
+
+    [Fact]
+    public async Task GetSimpleInvoiceStatusAsync_ShouldExposeIndeterminateTransmissionWithoutFiscalState()
+    {
+        var service = new StubInvoiceService(BuildInvoiceDetail(SifenDocumentStatus.Failed));
+
+        var result = await InvoiceEndpoints.GetSimpleInvoiceStatusAsync(
+            "01800123456001001000012311123456789202604251",
+            service,
+            CancellationToken.None);
+
+        var ok = Assert.IsAssignableFrom<IValueHttpResult>(result);
+        var json = JsonSerializer.Serialize(ok.Value!, ApiJsonOptions());
+        Assert.Contains("\"transmissionState\":\"Indeterminate\"", json);
+        Assert.Contains("\"fiscalState\":\"None\"", json);
+        Assert.Contains("\"status\":\"error\"", json);
+    }
+
+    [Fact]
     public async Task DownloadSimpleInvoiceXmlAsync_ShouldReturnXmlFile()
     {
         var service = new StubInvoiceService(BuildInvoiceDetail(SifenDocumentStatus.Accepted));
@@ -450,6 +494,18 @@ public sealed class FeApiInvoiceEndpointTests
             Guid.NewGuid(),
             SifenEnvironmentType.Test,
             status,
+            status switch
+            {
+                SifenDocumentStatus.Accepted or SifenDocumentStatus.Rejected => SifenTransmissionState.Delivered,
+                SifenDocumentStatus.Failed => SifenTransmissionState.Indeterminate,
+                _ => SifenTransmissionState.NotSent
+            },
+            status switch
+            {
+                SifenDocumentStatus.Accepted => SifenFiscalState.Approved,
+                SifenDocumentStatus.Rejected => SifenFiscalState.Rejected,
+                _ => SifenFiscalState.None
+            },
             "01800123456001001000012311123456789202604251",
             "TEST-01800123456001001000012311123456789202604251",
             "QR TEST",
@@ -496,6 +552,14 @@ public sealed class FeApiInvoiceEndpointTests
             [],
             [],
             []);
+    }
+
+    // Igual que la configuracion de la API (Program.cs): defaults web + JsonStringEnumConverter.
+    private static JsonSerializerOptions ApiJsonOptions()
+    {
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        options.Converters.Add(new JsonStringEnumConverter());
+        return options;
     }
 
     private static T ReadAnonymousProperty<T>(object instance, string propertyName)
