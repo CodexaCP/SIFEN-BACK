@@ -58,6 +58,12 @@ public sealed class SifenXmlDocumentSigner : IXmlDocumentSigner
             password,
             X509KeyStorageFlags.EphemeralKeySet);
 
+        var signingMoment = _clock.UtcNow;
+        if (signingMoment < certificate.NotBefore.ToUniversalTime() || signingMoment > certificate.NotAfter.ToUniversalTime())
+        {
+            throw new InvalidOperationException("The XML signature certificate is not valid at signing time.");
+        }
+
         if (!certificate.HasPrivateKey)
         {
             throw new InvalidOperationException("The XML signature certificate does not contain a private key.");
@@ -100,22 +106,48 @@ public sealed class SifenXmlDocumentSigner : IXmlDocumentSigner
 
         signedXml.ComputeSignature();
         var signatureElement = signedXml.GetXml();
+        var digestValue = Convert.ToBase64String(((Reference)signedXml.SignedInfo.References[0]!).DigestValue!);
         signedElement.ParentNode!.InsertAfter(xmlDocument.ImportNode(signatureElement, true), signedElement);
 
-        await RecordAuditAsync(command, metadata, cancellationToken);
+        var signedText = ToString(xmlDocument);
+        VerifyRoundTrip(signedText, command.DocumentId, certificate);
+        var fingerprint = Convert.ToHexString(certificate.GetCertHash(System.Security.Cryptography.HashAlgorithmName.SHA256));
+
+        await RecordAuditAsync(command, metadata, digestValue, cancellationToken);
 
         return new SignedXmlDocumentResult(
-            ToString(xmlDocument),
+            signedText,
             command.DocumentId,
             SifenXmlSignatureAlgorithms.CanonicalizationMethod,
             SifenXmlSignatureAlgorithms.SignatureMethod,
             SifenXmlSignatureAlgorithms.DigestMethod,
-            SifenXmlSignatureAlgorithms.EnvelopedSignatureTransform);
+            SifenXmlSignatureAlgorithms.EnvelopedSignatureTransform,
+            digestValue,
+            fingerprint);
+    }
+
+    /// <summary>Re-parsea el XML firmado y verifica la firma con la clave publica del certificado (autoverificacion).</summary>
+    private static void VerifyRoundTrip(string signedText, string documentId, X509Certificate2 certificate)
+    {
+        var reloaded = LoadXml(signedText);
+        var verifier = new SifenSignedXml(reloaded);
+        var signatureNode = reloaded.GetElementsByTagName("Signature", SignedXml.XmlDsigNamespaceUrl);
+        if (signatureNode.Count != 1)
+        {
+            throw new InvalidOperationException("The signed XML must contain exactly one ds:Signature.");
+        }
+
+        verifier.LoadXml((XmlElement)signatureNode[0]!);
+        if (!verifier.CheckSignature(certificate, true))
+        {
+            throw new InvalidOperationException($"The generated signature for '{documentId}' did not verify.");
+        }
     }
 
     private async Task RecordAuditAsync(
         SignXmlDocumentCommand command,
         TenantCertificateMetadata metadata,
+        string digestValue,
         CancellationToken cancellationToken)
     {
         await _auditTrail.RecordAsync(new AuditEvent
@@ -134,7 +166,8 @@ public sealed class SifenXmlDocumentSigner : IXmlDocumentSigner
                 ["certificate.alias"] = metadata.Alias,
                 ["certificate.fingerprint_sha256"] = metadata.FingerprintSha256,
                 ["signature.method"] = SifenXmlSignatureAlgorithms.SignatureMethod,
-                ["digest.method"] = SifenXmlSignatureAlgorithms.DigestMethod
+                ["digest.method"] = SifenXmlSignatureAlgorithms.DigestMethod,
+                ["digest.value"] = digestValue
             }
         }, cancellationToken);
     }

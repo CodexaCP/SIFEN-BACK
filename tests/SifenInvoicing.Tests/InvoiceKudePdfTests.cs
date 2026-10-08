@@ -228,7 +228,7 @@ public sealed class InvoiceKudePdfTests
     private sealed class FakeXmlDocumentSigner : IXmlDocumentSigner
     {
         public Task<SignedXmlDocumentResult> SignAsync(SignXmlDocumentCommand command, CancellationToken cancellationToken = default)
-            => Task.FromResult(new SignedXmlDocumentResult(command.Xml, command.DocumentId, "c14n", "rsa-sha256", "sha256", "enveloped"));
+            => Task.FromResult(new SignedXmlDocumentResult(StructuralSignatureStub.Apply(command.Xml), command.DocumentId, "c14n", "rsa-sha256", "sha256", "enveloped"));
     }
 
     private sealed class FakeSubmissionGateway : ISifenSubmissionGateway

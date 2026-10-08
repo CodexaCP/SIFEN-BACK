@@ -187,6 +187,7 @@ public sealed class EfInvoiceService : IInvoiceService
         string generatedCdc;
         string generatedXml;
         string correlationId;
+        string? signedXml = null;
 
         try
         {
@@ -226,6 +227,13 @@ public sealed class EfInvoiceService : IInvoiceService
             generatedCdc = built.Cdc;
             generatedXml = built.Xml;
 
+            // Firma XMLDSig del DE ANTES del commit: si falla, la transaccion se revierte (el numero no se consume y no
+            // queda documento). El tenant sale siempre de la resolucion del servidor, nunca del cliente.
+            if (canSignLocally && !requiresUnsignedLocalDraft)
+            {
+                signedXml = await SignAndValidateAsync(tenantId, environment, generatedCdc, generatedXml, cancellationToken);
+            }
+
             var totals = fiscal.Totals;
             document = SifenDocument.CreateInvoice(
                 tenantId,
@@ -257,6 +265,10 @@ public sealed class EfInvoiceService : IInvoiceService
             document.SetFiscalTrace(reserved.StampingNumber, reserved.SequenceId);
             correlationId = document.EnsureCorrelationId();
             document.SetInternalStatus(FeInvoiceInternalStatus.DRAFT);
+            if (signedXml is not null)
+            {
+                document.MarkSigned(signedXml, _clock.UtcNow);
+            }
 
             _dbContext.Documents.Add(document);
             _dbContext.DocumentLines.AddRange(fiscal.Lines.Select((line, index) =>
@@ -279,6 +291,11 @@ public sealed class EfInvoiceService : IInvoiceService
             }));
             _dbContext.DocumentLogs.Add(CreateLog(tenantId, document.Id, DocumentLogLevel.Information, "xml.generated", "Invoice XML generated (SifenDeXmlBuilder)."));
             _dbContext.DocumentLogs.Add(CreateLog(tenantId, document.Id, DocumentLogLevel.Information, "xml.validated", "Invoice XML validated against the local official XSD v150 before commit."));
+            if (signedXml is not null)
+            {
+                _dbContext.DocumentLogs.Add(CreateLog(tenantId, document.Id, DocumentLogLevel.Information, "xml.signed", "Invoice XML signed (XMLDSig) and validated against the XSD before commit."));
+            }
+
             _dbContext.FeInvoiceEvents.Add(FeInvoiceEvent.Create(
                 tenantId,
                 document.Id,
@@ -339,42 +356,7 @@ public sealed class EfInvoiceService : IInvoiceService
                 cancellationToken);
         }
 
-        string? signedXml = null;
-        if (canSignLocally)
-        {
-            try
-            {
-                var signed = await _xmlDocumentSigner.SignAsync(
-                    new SignXmlDocumentCommand(
-                        tenantId,
-                        environment,
-                        generatedCdc,
-                        generatedXml),
-                    cancellationToken);
-
-                signedXml = signed.SignedXml;
-                document.MarkSigned(signedXml, _clock.UtcNow);
-                _dbContext.DocumentLogs.Add(CreateLog(tenantId, document.Id, DocumentLogLevel.Information, "xml.signed", "Invoice XML signed."));
-            }
-            catch (Exception ex) when (IsInternalValidationRuntime(ex) && IsDiagnosticTransport(diagnostic.TransportMode))
-            {
-                if (allowUnsignedLocalValidationOverride && IsMissingFullValidationDependency(ex))
-                {
-                    return await CompleteUnsignedLocalDraftAsync(
-                        document,
-                        ex.Message,
-                        cancellationToken);
-                }
-
-                return await CompleteInternalValidationFailureAsync(
-                    document,
-                    "INTERNAL_VALIDATION_SIGNATURE_FAILED",
-                    ex.Message,
-                    "internal.validation.failed",
-                    cancellationToken);
-            }
-        }
-        else
+        if (signedXml is null)
         {
             _dbContext.DocumentLogs.Add(CreateLog(
                 tenantId,
@@ -1070,17 +1052,32 @@ public sealed class EfInvoiceService : IInvoiceService
             "XML_XSD_VALIDATION";
     }
 
-    private static bool IsInternalValidationRuntime(Exception exception)
+    private async Task<string> SignAndValidateAsync(
+        Guid tenantId,
+        SifenEnvironmentType environment,
+        string cdc,
+        string unsignedXml,
+        CancellationToken cancellationToken)
     {
-        return exception is DomainException or InvalidOperationException or CryptographicException or IOException;
-    }
-
-    private static bool IsMissingFullValidationDependency(Exception exception)
-    {
-        var message = exception.Message;
-        return message.Contains("XSD", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("certificate", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("CSC", StringComparison.OrdinalIgnoreCase);
+        try
+        {
+            var signed = await _xmlDocumentSigner.SignAsync(
+                new SignXmlDocumentCommand(tenantId, environment, cdc, unsignedXml),
+                cancellationToken);
+            await _deXsdValidator.EnsureSignedValidAsync(signed.SignedXml, cancellationToken);
+            return signed.SignedXml;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new UserFacingException(
+                "XML_SIGNATURE_FAILED",
+                "CertificateSignature",
+                "No pudimos firmar la factura.",
+                "Revisa el certificado de firma de esta compania y vuelve a intentar. No se consumio ningun numero.",
+                false,
+                409,
+                $"XMLDSig signing failed before commit: {ex.Message}");
+        }
     }
 
     private static string BuildUnsignedLocalValidationDetail(TenantFeOperationalDiagnostic diagnostic)

@@ -6,4 +6,6 @@ public sealed record SignedXmlDocumentResult(
     string CanonicalizationMethod,
     string SignatureMethod,
     string DigestMethod,
-    string TransformMethod);
+    string TransformMethod,
+    string? DigestValue = null,
+    string? CertificateFingerprintSha256 = null);

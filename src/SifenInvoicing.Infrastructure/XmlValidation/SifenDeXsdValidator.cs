@@ -32,7 +32,13 @@ public sealed class SifenDeXsdValidator : ISifenDeXsdValidator
             : configured;
     }
 
-    public async Task EnsureValidAsync(string unsignedDeXml, CancellationToken cancellationToken = default)
+    public Task EnsureValidAsync(string unsignedDeXml, CancellationToken cancellationToken = default)
+        => ValidateAsync(WithPlaceholders(unsignedDeXml), "El DE01 generado", cancellationToken);
+
+    public Task EnsureSignedValidAsync(string signedDeXml, CancellationToken cancellationToken = default)
+        => ValidateAsync(WithQrPlaceholder(signedDeXml), "El DE01 firmado", cancellationToken);
+
+    private async Task ValidateAsync(string xml, string subject, CancellationToken cancellationToken)
     {
         var rootPath = Path.Combine(_packageDirectory, RootSchemaFile);
         if (!File.Exists(rootPath))
@@ -44,11 +50,11 @@ public sealed class SifenDeXsdValidator : ISifenDeXsdValidator
         XmlSchemaValidationResult result;
         try
         {
-            result = await _validator.ValidateAsync(WithPlaceholders(unsignedDeXml), rootPath, cancellationToken);
+            result = await _validator.ValidateAsync(xml, rootPath, cancellationToken);
         }
         catch (System.Xml.XmlException ex)
         {
-            throw new DomainException($"El DE generado no es XML bien formado o el paquete XSD no pudo cargarse: {ex.Message}");
+            throw new DomainException($"{subject} no es XML bien formado o el paquete XSD no pudo cargarse: {ex.Message}");
         }
 
         if (result.IsValid)
@@ -58,7 +64,7 @@ public sealed class SifenDeXsdValidator : ISifenDeXsdValidator
 
         var details = string.Join("; ", result.Errors.Take(5).Select(error =>
             $"{error.Message} (linea {error.LineNumber}, pos {error.LinePosition})"));
-        throw new DomainException($"El DE01 generado no valida contra el XSD oficial v150 ({result.Errors.Count} errores): {details}");
+        throw new DomainException($"{subject} no valida contra el XSD oficial v150 ({result.Errors.Count} errores): {details}");
     }
 
     public async Task<string?> CheckPackageAsync(CancellationToken cancellationToken = default)
@@ -104,10 +110,29 @@ public sealed class SifenDeXsdValidator : ISifenDeXsdValidator
             new XElement(Ds + "SignatureValue", "AAAA"),
             new XElement(Ds + "KeyInfo", new XElement(Ds + "X509Data", new XElement(Ds + "X509Certificate", "AAAA"))));
         de.AddAfterSelf(signature);
+        AddQrPlaceholder(signature, cdc);
+        return document.ToString(SaveOptions.DisableFormatting);
+    }
 
+    /// <summary>Copia del rDE firmado con un gCamFuFD de relleno tras la Signature real (solo para validar estructura).</summary>
+    internal static string WithQrPlaceholder(string signedDeXml)
+    {
+        var document = XDocument.Parse(signedDeXml);
+        var cdc = document.Root?.Element(Sifen + "DE")?.Attribute("Id")?.Value;
+        var signatures = document.Root?.Elements(Ds + "Signature").ToList();
+        if (string.IsNullOrEmpty(cdc) || signatures is not { Count: 1 })
+        {
+            throw new DomainException("El DE01 firmado debe contener DE@Id y exactamente una ds:Signature hija de rDE.");
+        }
+
+        AddQrPlaceholder(signatures[0], cdc);
+        return document.ToString(SaveOptions.DisableFormatting);
+    }
+
+    private static void AddQrPlaceholder(XElement signature, string cdc)
+    {
         // dCarQR de relleno: el XSD exige 100-600 caracteres. NO es un QR valido (CSC y DigestValue reales: fase posterior).
         var qr = "https://ekuatia.set.gov.py/consultas-test/qr?nVersion=150&Id=" + cdc + "&dFeEmiDE=PLACEHOLDER&cHashQR=PLACEHOLDER";
         signature.AddAfterSelf(new XElement(Sifen + "gCamFuFD", new XElement(Sifen + "dCarQR", qr)));
-        return document.ToString(SaveOptions.DisableFormatting);
     }
 }

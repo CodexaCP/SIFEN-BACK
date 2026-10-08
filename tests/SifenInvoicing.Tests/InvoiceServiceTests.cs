@@ -944,7 +944,7 @@ public sealed partial class InvoiceServiceTests
         public Task<SignedXmlDocumentResult> SignAsync(SignXmlDocumentCommand command, CancellationToken cancellationToken = default)
         {
             return Task.FromResult(new SignedXmlDocumentResult(
-                $"<signed>{command.Xml}</signed>",
+                StructuralSignatureStub.Apply(command.Xml),
                 command.DocumentId,
                 "c14n",
                 "rsa-sha256",
