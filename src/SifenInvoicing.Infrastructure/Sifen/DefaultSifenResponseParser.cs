@@ -1,5 +1,7 @@
 using SifenInvoicing.Application.Sifen;
 using SifenInvoicing.Domain.Documents;
+using System.Globalization;
+using System.Text;
 using System.Xml.Linq;
 
 namespace SifenInvoicing.Infrastructure.Sifen;
@@ -99,6 +101,12 @@ public sealed class DefaultSifenResponseParser : ISifenResponseParser
         try
         {
             var document = XDocument.Parse(rawResponse);
+            var fault = document.Descendants().FirstOrDefault(element => element.Name.LocalName == "Fault");
+            if (fault is not null)
+            {
+                return BuildFault(fault);
+            }
+
             var protocol = document.Descendants().FirstOrDefault(element => element.Name.LocalName == "rProtDe");
             if (protocol is null)
             {
@@ -114,13 +122,37 @@ public sealed class DefaultSifenResponseParser : ISifenResponseParser
                     "SIFEN response protocol node rProtDe was not found.");
             }
 
-            var cdc = protocol.Elements().FirstOrDefault(element => element.Name.LocalName == "Id")?.Value?.Trim();
-            var status = protocol.Elements().FirstOrDefault(element => element.Name.LocalName == "dEstRes")?.Value?.Trim();
-            var trackingId = protocol.Elements().FirstOrDefault(element => element.Name.LocalName == "dProtAut")?.Value?.Trim();
-            var firstResultGroup = protocol.Elements().FirstOrDefault(element => element.Name.LocalName == "gResProc");
-            var code = firstResultGroup?.Elements().FirstOrDefault(element => element.Name.LocalName == "dCodRes")?.Value?.Trim() ?? status;
-            var message = firstResultGroup?.Elements().FirstOrDefault(element => element.Name.LocalName == "dMsgRes")?.Value?.Trim() ?? status;
-            return MapProtocolResponse(cdc, trackingId, status, code, message);
+            var cdc = Child(protocol, "Id");
+            var digest = Child(protocol, "dDigVal");
+            var estado = Child(protocol, "dEstRes");
+            var trackingId = Child(protocol, "dProtAut");
+            var results = protocol.Elements()
+                .Where(element => element.Name.LocalName == "gResProc")
+                .Select(group => (Code: Child(group, "dCodRes"), Message: Child(group, "dMsgRes")))
+                .ToList();
+            var code = results.Select(item => item.Code).FirstOrDefault(value => value is not null);
+            var message = results.Select(item => item.Message).FirstOrDefault(value => value is not null);
+            var detail = string.Join(" | ", results.Select(item => $"{item.Code}: {item.Message}"));
+
+            // El resultado se decide SOLO por dEstRes (valores del Manual Tecnico: Aprobado / Aprobado con observacion /
+            // Rechazado). Ni dProtAut ni fragmentos de texto ni codigos de otros servicios (p. ej. 0300 es de lote) aprueban.
+            return NormalizeEstado(estado) switch
+            {
+                "aprobado" => Build(
+                    SifenResponseOutcome.Approved, SifenDocumentStatus.Accepted, true, true, cdc, trackingId,
+                    code ?? "APPROVED", "Factura electronica aprobada por SIFEN.", detail, digest),
+                "aprobado con observacion" => Build(
+                    SifenResponseOutcome.Observed, SifenDocumentStatus.Accepted, true, true, cdc, trackingId,
+                    code ?? "APPROVED_WITH_OBSERVATIONS", "Factura electronica aprobada por SIFEN con observaciones.", detail, digest),
+                "rechazado" => Build(
+                    SifenResponseOutcome.Rejected, SifenDocumentStatus.Rejected, false, true, cdc, trackingId,
+                    code ?? "REJECTED", message ?? "Factura electronica rechazada por SIFEN.", detail, digest),
+                _ => Build(
+                    SifenResponseOutcome.Unknown, SifenDocumentStatus.Submitted, false, false, cdc, trackingId,
+                    code ?? "UNKNOWN_RESPONSE",
+                    "SIFEN devolvio una respuesta no reconocida. Requiere revision.",
+                    string.IsNullOrWhiteSpace(estado) ? detail : $"dEstRes={estado} | {detail}", digest)
+            };
         }
         catch
         {
@@ -137,86 +169,46 @@ public sealed class DefaultSifenResponseParser : ISifenResponseParser
         }
     }
 
-    private static ParsedSifenResponse MapProtocolResponse(
-        string? cdc,
-        string? trackingId,
-        string? status,
-        string? code,
-        string? message)
+    // SOAP 1.2: env:Fault/env:Code/env:Value y env:Reason/env:Text. Un Fault no es un resultado fiscal.
+    private static ParsedSifenResponse BuildFault(XElement fault)
     {
-        var normalizedStatus = Normalize(status);
-        var normalizedCode = Normalize(code);
-        var normalizedMessage = Normalize(message);
-        var descriptor = string.Join(" | ", new[] { normalizedStatus, normalizedCode, normalizedMessage }
-            .Where(value => !string.IsNullOrWhiteSpace(value)));
-        var lowerDescriptor = descriptor.ToLowerInvariant();
-
-        if (!string.IsNullOrWhiteSpace(trackingId) || ContainsAny(lowerDescriptor, "aprob", "0300"))
-        {
-            return Build(
-                SifenResponseOutcome.Approved,
-                SifenDocumentStatus.Accepted,
-                true,
-                true,
-                cdc,
-                trackingId,
-                normalizedCode ?? "APPROVED",
-                "Factura electronica aprobada por SIFEN.",
-                descriptor);
-        }
-
-        if (ContainsAny(lowerDescriptor, "rechaz", "deneg", "rechazo"))
-        {
-            return Build(
-                SifenResponseOutcome.Rejected,
-                SifenDocumentStatus.Rejected,
-                false,
-                true,
-                cdc,
-                trackingId,
-                normalizedCode ?? "REJECTED",
-                "Factura electronica rechazada por SIFEN.",
-                descriptor);
-        }
-
-        if (ContainsAny(lowerDescriptor, "observ"))
-        {
-            return Build(
-                SifenResponseOutcome.Observed,
-                SifenDocumentStatus.Submitted,
-                false,
-                false,
-                cdc,
-                trackingId,
-                normalizedCode ?? "OBSERVED",
-                "Factura electronica observada. Requiere revision operativa.",
-                descriptor);
-        }
-
-        if (ContainsAny(lowerDescriptor, "error", "fall", "exception"))
-        {
-            return Build(
-                SifenResponseOutcome.TechnicalError,
-                SifenDocumentStatus.Failed,
-                false,
-                true,
-                cdc,
-                trackingId,
-                normalizedCode ?? "TECHNICAL_ERROR",
-                "SIFEN devolvio un error tecnico.",
-                descriptor);
-        }
-
+        var faultCode = fault.Descendants().FirstOrDefault(element => element.Name.LocalName == "Value")?.Value?.Trim();
+        var reason = fault.Descendants().FirstOrDefault(element => element.Name.LocalName == "Text")?.Value?.Trim();
         return Build(
-            SifenResponseOutcome.Unknown,
-            SifenDocumentStatus.Submitted,
+            SifenResponseOutcome.TechnicalError,
+            SifenDocumentStatus.Failed,
             false,
-            false,
-            cdc,
-            trackingId,
-            normalizedCode ?? "UNKNOWN_RESPONSE",
-            "SIFEN devolvio una respuesta no reconocida. Requiere revision.",
-            descriptor);
+            true,
+            null,
+            null,
+            "SOAP_FAULT",
+            "SIFEN devolvio un SOAP Fault.",
+            $"SOAP Fault: {faultCode} {reason}".Trim());
+    }
+
+    private static string? Child(XElement parent, string localName)
+    {
+        return Normalize(parent.Elements().FirstOrDefault(element => element.Name.LocalName == localName)?.Value);
+    }
+
+    private static string NormalizeEstado(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var decomposed = value.Normalize(NormalizationForm.FormD);
+        var builder = new StringBuilder();
+        foreach (var character in decomposed)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark)
+            {
+                builder.Append(char.ToLowerInvariant(character));
+            }
+        }
+
+        return string.Join(' ', builder.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries));
     }
 
     private static ParsedSifenResponse Build(
@@ -228,7 +220,8 @@ public sealed class DefaultSifenResponseParser : ISifenResponseParser
         string? trackingId,
         string? statusCode,
         string? statusMessage,
-        string? technicalMessage)
+        string? technicalMessage,
+        string? digestValue = null)
     {
         return new ParsedSifenResponse(
             outcome,
@@ -239,16 +232,12 @@ public sealed class DefaultSifenResponseParser : ISifenResponseParser
             trackingId,
             statusCode,
             statusMessage,
-            technicalMessage);
+            technicalMessage,
+            digestValue);
     }
 
     private static string? Normalize(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-    }
-
-    private static bool ContainsAny(string value, params string[] fragments)
-    {
-        return fragments.Any(fragment => value.Contains(fragment, StringComparison.Ordinal));
     }
 }

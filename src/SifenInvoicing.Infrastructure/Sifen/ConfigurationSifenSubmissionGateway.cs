@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using SifenInvoicing.Application.Diagnostics;
 using SifenInvoicing.Application.Sifen;
 using SifenInvoicing.Infrastructure.Persistence;
-using System.Text;
+using System.Security.Cryptography.X509Certificates;
 using System.Xml.Linq;
 
 namespace SifenInvoicing.Infrastructure.Sifen;
@@ -14,17 +14,20 @@ public sealed class ConfigurationSifenSubmissionGateway : ISifenSubmissionGatewa
     private readonly ISystemClock _clock;
     private readonly ISifenSoapTransport _transport;
     private readonly SifenDbContext _dbContext;
+    private readonly ISifenClientCertificateProvider _certificateProvider;
 
     public ConfigurationSifenSubmissionGateway(
         IConfiguration configuration,
         ISystemClock clock,
         ISifenSoapTransport transport,
-        SifenDbContext dbContext)
+        SifenDbContext dbContext,
+        ISifenClientCertificateProvider certificateProvider)
     {
         _configuration = configuration;
         _clock = clock;
         _transport = transport;
         _dbContext = dbContext;
+        _certificateProvider = certificateProvider;
     }
 
     public async Task<SifenSubmissionResult> SendToSifenAsync(
@@ -79,7 +82,17 @@ public sealed class ConfigurationSifenSubmissionGateway : ISifenSubmissionGatewa
                 true);
         }
 
-        if (!HasClientCertificateConfiguration())
+        X509Certificate2? clientCertificate;
+        try
+        {
+            clientCertificate = await _certificateProvider.GetAsync(command.TenantId, command.Environment, cancellationToken);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.Security.Cryptography.CryptographicException or IOException)
+        {
+            clientCertificate = null;
+        }
+
+        if (clientCertificate is null)
         {
             return new SifenSubmissionResult(
                 false,
@@ -93,13 +106,17 @@ public sealed class ConfigurationSifenSubmissionGateway : ISifenSubmissionGatewa
                 true);
         }
 
-        return await SendAsync(endpoint, requestXml, command.Environment, cancellationToken);
+        using (clientCertificate)
+        {
+            return await SendAsync(endpoint, requestXml, command.Environment, clientCertificate, cancellationToken);
+        }
     }
 
     private async Task<SifenSubmissionResult> SendAsync(
         string endpoint,
         string requestXml,
         Domain.Tenants.SifenEnvironmentType environment,
+        X509Certificate2 clientCertificate,
         CancellationToken cancellationToken)
     {
         var timeoutSeconds = int.TryParse(_configuration["Sifen:Timeouts:SoapRequestSeconds"], out var configuredTimeoutSeconds)
@@ -110,10 +127,12 @@ public sealed class ConfigurationSifenSubmissionGateway : ISifenSubmissionGatewa
         try
         {
             var transportResult = await _transport.SendAsync(
-                new Uri(endpoint, UriKind.Absolute),
-                requestXml,
-                soapAction,
-                TimeSpan.FromSeconds(timeoutSeconds),
+                new SifenSoapRequest(
+                    new Uri(endpoint, UriKind.Absolute),
+                    requestXml,
+                    soapAction,
+                    TimeSpan.FromSeconds(timeoutSeconds),
+                    clientCertificate),
                 cancellationToken);
 
             if (transportResult.IsSuccessStatusCode)
@@ -169,35 +188,17 @@ public sealed class ConfigurationSifenSubmissionGateway : ISifenSubmissionGatewa
         }
     }
 
+    // dId: secuencial controlado por el contribuyente (Manual Tecnico, 1-15 digitos). Hoy se deriva del reloj;
+    // un dId persistente/secuencial queda como mejora (no cambia el DE firmado).
     private string BuildSoapEnvelope(SendToSifenCommand command)
     {
-        XNamespace soap = "http://schemas.xmlsoap.org/soap/envelope/";
-        XNamespace sifen = "http://ekuatia.set.gov.py/sifen/xsd";
-        var signedDocument = XDocument.Parse(command.SignedXml, LoadOptions.PreserveWhitespace);
         var controlId = ((_clock.UtcNow.ToUnixTimeMilliseconds() % 1_000_000_000_000_000L) + 1).ToString("D15");
-
-        var envelope = new XDocument(
-            new XDeclaration("1.0", "utf-8", null),
-            new XElement(soap + "Envelope",
-                new XAttribute(XNamespace.Xmlns + "soapenv", soap),
-                new XAttribute(XNamespace.Xmlns + "sif", sifen),
-                new XElement(soap + "Body",
-                    new XElement(sifen + "rEnviDe",
-                        new XElement(sifen + "dId", controlId),
-                        new XElement(sifen + "xDE", signedDocument.Root)))));
-
-        return envelope.ToString(SaveOptions.DisableFormatting);
+        return SifenSoapEnvelopeBuilder.BuildReception(controlId, command.SignedXml);
     }
 
     private static bool IsDiagnosticMode(string? transportMode)
     {
         return string.Equals(transportMode, "Diagnostic", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private bool HasClientCertificateConfiguration()
-    {
-        return !string.IsNullOrWhiteSpace(_configuration["Sifen:Transport:ClientCertificatePath"]) &&
-               !string.IsNullOrWhiteSpace(_configuration["Sifen:Transport:ClientCertificatePasswordEnvironmentVariable"]);
     }
 
     private static void ValidateSignedXml(string cdc, string signedXml)

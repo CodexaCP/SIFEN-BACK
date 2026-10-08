@@ -162,6 +162,12 @@ public sealed class SifenDocument : TenantScopedEntity
 
     public DateTimeOffset IssuedAt { get; private set; }
 
+    /// <summary>Estado de transmision hacia SIFEN (interno de la aplicacion, independiente de Status e InternalStatus).</summary>
+    public SifenTransmissionState TransmissionState { get; private set; }
+
+    /// <summary>Estado fiscal conocido del DE en SIFEN (interno de la aplicacion).</summary>
+    public SifenFiscalState FiscalState { get; private set; }
+
     public DateTimeOffset? SignedAt { get; private set; }
 
     public DateTimeOffset? SubmittedAt { get; private set; }
@@ -172,6 +178,12 @@ public sealed class SifenDocument : TenantScopedEntity
     public string? StampingNumber { get; private set; }
 
     public Guid? NumberingSequenceId { get; private set; }
+
+    public void SetSifenStates(SifenTransmissionState transmissionState, SifenFiscalState fiscalState)
+    {
+        TransmissionState = transmissionState;
+        FiscalState = fiscalState;
+    }
 
     public void SetFiscalTrace(string stampingNumber, Guid numberingSequenceId)
     {

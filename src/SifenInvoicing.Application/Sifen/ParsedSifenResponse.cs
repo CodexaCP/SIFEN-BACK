@@ -11,4 +11,5 @@ public sealed record ParsedSifenResponse(
     string? TrackingId,
     string? StatusCode,
     string? StatusMessage,
-    string? TechnicalMessage);
+    string? TechnicalMessage,
+    string? DigestValue = null);

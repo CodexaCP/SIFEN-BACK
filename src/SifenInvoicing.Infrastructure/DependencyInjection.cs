@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SifenInvoicing.Application.Auditing;
@@ -62,6 +62,9 @@ public static class DependencyInjection
         services.AddScoped<ISifenSoapTransport, DefaultSifenSoapTransport>();
         services.AddScoped<ISifenSubmissionGateway, ConfigurationSifenSubmissionGateway>();
         services.AddScoped<ISifenResponseParser, DefaultSifenResponseParser>();
+        services.AddScoped<ISifenClientCertificateProvider, TenantSifenClientCertificateProvider>();
+        services.AddScoped<ISifenCdcQueryGateway, NotConfiguredSifenCdcQueryGateway>();
+        services.AddScoped<ISifenReconciliationService, EfSifenReconciliationService>();
         services.AddScoped<IXmlDocumentSigner, SifenXmlDocumentSigner>();
         services.AddScoped<IXmlSchemaValidator, XmlSchemaValidator>();
         services.AddScoped<ISifenDeXsdValidator, SifenDeXsdValidator>();

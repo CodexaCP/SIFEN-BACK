@@ -1,46 +1,26 @@
 using System.Net.Http.Headers;
-using System.Security.Cryptography.X509Certificates;
-using Microsoft.Extensions.Configuration;
+using System.Net.Security;
+using System.Security.Authentication;
+using System.Text;
 
 namespace SifenInvoicing.Infrastructure.Sifen;
 
+/// <summary>SOAP 1.2 sobre HTTPS con TLS 1.2 y autenticacion mutua usando el certificado del tenant (Manual Tecnico v150).</summary>
 public sealed class DefaultSifenSoapTransport : ISifenSoapTransport
 {
-    private readonly IConfiguration _configuration;
-
-    public DefaultSifenSoapTransport(IConfiguration configuration)
-    {
-        _configuration = configuration;
-    }
-
     public async Task<SifenSoapTransportResult> SendAsync(
-        Uri endpoint,
-        string requestXml,
-        string? soapAction,
-        TimeSpan timeout,
+        SifenSoapRequest request,
         CancellationToken cancellationToken = default)
     {
-        using var handler = CreateHandler();
+        ArgumentNullException.ThrowIfNull(request);
+
+        using var handler = CreateHandler(request);
         using var client = new HttpClient(handler)
         {
-            Timeout = timeout
+            Timeout = request.Timeout
         };
-        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
-        {
-            Content = new StringContent(requestXml, System.Text.Encoding.UTF8, "text/xml")
-        };
-
-        request.Content.Headers.ContentType = new MediaTypeHeaderValue("text/xml")
-        {
-            CharSet = "utf-8"
-        };
-
-        if (!string.IsNullOrWhiteSpace(soapAction))
-        {
-            request.Headers.TryAddWithoutValidation("SOAPAction", soapAction);
-        }
-
-        using var response = await client.SendAsync(request, cancellationToken);
+        using var message = BuildHttpRequest(request);
+        using var response = await client.SendAsync(message, cancellationToken);
         var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
         return new SifenSoapTransportResult(
@@ -49,23 +29,35 @@ public sealed class DefaultSifenSoapTransport : ISifenSoapTransport
             responseBody);
     }
 
-    private HttpClientHandler CreateHandler()
+    /// <summary>POST SOAP 1.2: Content-Type application/soap+xml (con action solo si esta confirmada) y sin cabecera SOAPAction.</summary>
+    public static HttpRequestMessage BuildHttpRequest(SifenSoapRequest request)
     {
-        var handler = new HttpClientHandler();
-        var certificatePath = _configuration["Sifen:Transport:ClientCertificatePath"];
-        var passwordEnvironmentVariable = _configuration["Sifen:Transport:ClientCertificatePasswordEnvironmentVariable"];
-
-        if (string.IsNullOrWhiteSpace(certificatePath))
+        var message = new HttpRequestMessage(HttpMethod.Post, request.Endpoint)
         {
-            return handler;
+            Content = new StringContent(
+                request.EnvelopeXml,
+                new UTF8Encoding(false),
+                MediaTypeHeaderValue.Parse(SifenSoapEnvelopeBuilder.BuildContentType(request.SoapAction)))
+        };
+        message.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/soap+xml"));
+        return message;
+    }
+
+    private static SocketsHttpHandler CreateHandler(SifenSoapRequest request)
+    {
+        var handler = new SocketsHttpHandler
+        {
+            SslOptions = new SslClientAuthenticationOptions
+            {
+                EnabledSslProtocols = SslProtocols.Tls12
+            }
+        };
+
+        if (request.ClientCertificate is not null)
+        {
+            handler.SslOptions.ClientCertificates = [request.ClientCertificate];
         }
 
-        var password = string.IsNullOrWhiteSpace(passwordEnvironmentVariable)
-            ? null
-            : Environment.GetEnvironmentVariable(passwordEnvironmentVariable);
-
-        var certificate = new X509Certificate2(certificatePath, password);
-        handler.ClientCertificates.Add(certificate);
         return handler;
     }
 }

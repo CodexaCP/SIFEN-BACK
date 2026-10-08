@@ -414,6 +414,9 @@ public sealed class EfInvoiceService : IInvoiceService
                 "Factura creada y validada internamente en entorno TEST.");
         }
 
+        document.SetSifenStates(SifenTransmissionState.Sending, SifenFiscalState.None);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
         var submission = await _submissionGateway.SendToSifenAsync(
             new SendToSifenCommand(
                 tenantId,
@@ -465,6 +468,7 @@ public sealed class EfInvoiceService : IInvoiceService
         var attemptedAt = _clock.UtcNow;
 
         document.MarkPendingSubmission(document.LastSubmissionEndpoint ?? "retry://pending", attemptedAt);
+        document.SetSifenStates(SifenTransmissionState.Sending, SifenFiscalState.None);
         _dbContext.DocumentLogs.Add(CreateLog(
             tenantId,
             document.Id,
@@ -498,6 +502,7 @@ public sealed class EfInvoiceService : IInvoiceService
         }
         catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException)
         {
+            document.SetSifenStates(SifenTransmissionState.Indeterminate, SifenFiscalState.None);
             document.MarkFailed(
                 "RETRY_RUNTIME_ERROR",
                 "Ocurrio un error tecnico al reintentar el envio.",
@@ -1357,6 +1362,25 @@ public sealed class EfInvoiceService : IInvoiceService
             document.MarkPendingSubmission(submission.Endpoint, _clock.UtcNow);
         }
 
+        // La respuesta debe corresponder al DE enviado: un Id distinto del CDC nunca se acepta como resultado fiscal.
+        if (!string.IsNullOrWhiteSpace(parsed.Cdc) &&
+            !string.Equals(parsed.Cdc, document.Cdc, StringComparison.Ordinal))
+        {
+            parsed = parsed with
+            {
+                Outcome = SifenResponseOutcome.Unknown,
+                StatusHint = SifenDocumentStatus.Submitted,
+                IsSuccessful = false,
+                IsFinal = false,
+                StatusCode = "RESPONSE_CDC_MISMATCH",
+                StatusMessage = "La respuesta de SIFEN corresponde a otro CDC. Requiere revision.",
+                TechnicalMessage = $"Response Id {parsed.Cdc} differs from document CDC {document.Cdc}."
+            };
+        }
+
+        var (transmissionState, fiscalState) = SifenStateMapper.Map(submission, parsed);
+        document.SetSifenStates(transmissionState, fiscalState);
+
         switch (parsed.StatusHint)
         {
             case SifenDocumentStatus.Accepted:
@@ -1394,6 +1418,17 @@ public sealed class EfInvoiceService : IInvoiceService
         }
     }
 
+    private static string? ExtractDId(string? requestPayload)
+    {
+        if (string.IsNullOrWhiteSpace(requestPayload))
+        {
+            return null;
+        }
+
+        var match = System.Text.RegularExpressions.Regex.Match(requestPayload, @"<(?:\w+:)?dId>(\d{1,15})</");
+        return match.Success ? match.Groups[1].Value : null;
+    }
+
     private void AddSubmissionLogs(
         Guid tenantId,
         Guid documentId,
@@ -1413,6 +1448,7 @@ public sealed class EfInvoiceService : IInvoiceService
                 submission.Endpoint,
                 requestLength = submission.RequestPayload?.Length,
                 requestSha256 = ComputeSha256(submission.RequestPayload),
+                requestDId = ExtractDId(submission.RequestPayload),
                 submission.TransportCode,
                 submission.HttpStatusCode,
                 submission.IsDiagnostic
@@ -1440,7 +1476,8 @@ public sealed class EfInvoiceService : IInvoiceService
                 parsed.TrackingId,
                 parsed.StatusCode,
                 parsed.StatusMessage,
-                parsed.TechnicalMessage
+                parsed.TechnicalMessage,
+                responseDigestValue = parsed.DigestValue
             })));
     }
 
@@ -1496,6 +1533,11 @@ public sealed class EfInvoiceService : IInvoiceService
             throw new DomainException("Rejected invoices require explicit reprocessing.");
         }
 
+        if (document.TransmissionState is SifenTransmissionState.Indeterminate or SifenTransmissionState.Sending)
+        {
+            throw new DomainException("The SIFEN transmission result is indeterminate. Reconcile by CDC before retrying.");
+        }
+
         if (document.Status != SifenDocumentStatus.Failed)
         {
             throw new DomainException("Only technical failed invoices can be retried.");
@@ -1522,6 +1564,7 @@ public sealed class EfInvoiceService : IInvoiceService
         return statusCode.StartsWith("HTTP_", StringComparison.OrdinalIgnoreCase)
             || statusCode.Equals("NO_RESPONSE", StringComparison.OrdinalIgnoreCase)
             || statusCode.Equals("PENDING_TRANSPORT", StringComparison.OrdinalIgnoreCase)
+            || statusCode.Equals("CDC_NOT_FOUND", StringComparison.OrdinalIgnoreCase)
             || statusCode.Equals("SOAP_TIMEOUT", StringComparison.OrdinalIgnoreCase)
             || statusCode.Equals("SOAP_TRANSPORT_ERROR", StringComparison.OrdinalIgnoreCase)
             || statusCode.Equals("INVALID_RESPONSE", StringComparison.OrdinalIgnoreCase)

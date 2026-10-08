@@ -389,7 +389,7 @@ public sealed partial class InvoiceServiceTests
             new ReadyTenantCertificateValidator(),
             new FakeXmlDocumentSigner(),
             new StubOperationalReadinessReporter(transportMode: "Live"),
-            new FailingSubmissionGateway(),
+            new NotDeliveredSubmissionGateway(),
             new DefaultParser(),
             CreateConfiguration(),
             new NullAuditTrail(),
@@ -497,7 +497,7 @@ public sealed partial class InvoiceServiceTests
             new ReadyTenantCertificateValidator(),
             new FakeXmlDocumentSigner(),
             new StubOperationalReadinessReporter(transportMode: "Live"),
-            new FailingSubmissionGateway(),
+            new NotDeliveredSubmissionGateway(),
             new DefaultParser(),
             CreateConfiguration(),
             new NullAuditTrail(),
@@ -898,6 +898,122 @@ public sealed partial class InvoiceServiceTests
             .Build();
     }
 
+    private static EfInvoiceService NewLiveService(SifenDbContext dbContext, ITenantContextAccessor accessor, ISifenSubmissionGateway gateway) =>
+        new(
+            dbContext, accessor, DeTestKit.Builder(), DeTestKit.Xsd(), new InvoiceKudePdfRenderer(),
+            new ReadyTenantCertificateValidator(), new FakeXmlDocumentSigner(), new StubOperationalReadinessReporter(transportMode: "Live"),
+            gateway, new DefaultParser(), CreateConfiguration(), new NullAuditTrail(), new SystemClock(),
+            new SifenInvoicing.Infrastructure.Numbering.EfNumberingService(dbContext), new TestFiscalClock(), new FakeQrAttacher());
+
+    // Sincrono a proposito: el tenant ambiente (AsyncLocal) debe fijarse en el flujo de la prueba, no dentro de un async helper.
+    private static (SifenDbContext Db, ITenantContextAccessor Accessor, Tenant Tenant) NewTenantDb(string slug)
+    {
+        var tenant = Tenant.CreateSharedDatabaseTenant(slug, slug.ToUpperInvariant());
+        var accessor = new AsyncLocalTenantContextAccessor();
+        accessor.SetCurrent(new TenantContext { TenantId = tenant.Id.ToString(), ResolvedTenantId = tenant.Id, ClientId = "ops-user", IsResolved = true });
+        return (CreateDbContext(accessor), accessor, tenant);
+    }
+
+    private static async Task<Guid> CreateTimedOutDocumentAsync(SifenDbContext db, ITenantContextAccessor accessor, Tenant tenant)
+    {
+        SeedRetryDependencies(db, tenant);
+        await db.SaveChangesAsync();
+        var created = await CreateInvoiceAsync(NewLiveService(db, accessor, new FailingSubmissionGateway()));
+        return created.Id;
+    }
+
+    [Fact]
+    public async Task Timeout_ShouldLeaveTransmissionIndeterminate_AndBlockRetryUntilReconciled()
+    {
+        var (db, accessor, tenant) = NewTenantDb("timeout-block");
+        var id = await CreateTimedOutDocumentAsync(db, accessor, tenant);
+        await using var _ = db;
+        var document = await db.Documents.SingleAsync(item => item.Id == id);
+        Assert.Equal(SifenTransmissionState.Indeterminate, document.TransmissionState);
+        Assert.Equal(SifenFiscalState.None, document.FiscalState);
+        var counting = new CountingSubmissionGateway();
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() => NewLiveService(db, accessor, counting).RetryAsync(id));
+
+        Assert.Contains("indeterminate", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, counting.SendCount); // un timeout NO provoca otro envio
+    }
+
+    [Fact]
+    public async Task Reconcile_WhenQueryUnavailable_ShouldKeepIndeterminate_AndNotResend()
+    {
+        var (db, accessor, tenant) = NewTenantDb("reconcile-unavailable");
+        var id = await CreateTimedOutDocumentAsync(db, accessor, tenant);
+        await using var _ = db;
+        var reconcile = new SifenInvoicing.Infrastructure.Invoices.EfSifenReconciliationService(
+            db, accessor, new SifenInvoicing.Infrastructure.Sifen.NotConfiguredSifenCdcQueryGateway(), new SystemClock());
+
+        var result = await reconcile.ReconcileAsync(id);
+
+        Assert.Equal(SifenReconciliationDecision.RemainIndeterminate, result.Decision);
+        Assert.Equal("Indeterminate", result.TransmissionState);
+        await Assert.ThrowsAsync<DomainException>(() => NewLiveService(db, accessor, new CountingSubmissionGateway()).RetryAsync(id));
+    }
+
+    [Fact]
+    public async Task Reconcile_WhenCdcFound_ShouldMarkApproved_AndNeverRetry()
+    {
+        var (db, accessor, tenant) = NewTenantDb("reconcile-found");
+        var id = await CreateTimedOutDocumentAsync(db, accessor, tenant);
+        await using var _ = db;
+        var reconcile = new SifenInvoicing.Infrastructure.Invoices.EfSifenReconciliationService(
+            db, accessor, new StubQueryGateway(SifenCdcQueryOutcome.Found, "0422", "123456789012345"), new SystemClock());
+
+        var result = await reconcile.ReconcileAsync(id);
+
+        Assert.Equal(SifenReconciliationDecision.ConfirmApproved, result.Decision);
+        var document = await db.Documents.SingleAsync(item => item.Id == id);
+        Assert.Equal(SifenDocumentStatus.Accepted, document.Status);
+        Assert.Equal(SifenTransmissionState.Delivered, document.TransmissionState);
+        Assert.Equal(SifenFiscalState.Approved, document.FiscalState);
+        await Assert.ThrowsAsync<DomainException>(() => NewLiveService(db, accessor, new CountingSubmissionGateway()).RetryAsync(id));
+    }
+
+    [Fact]
+    public async Task Reconcile_WhenCdcNotFound_ShouldAllowRetryOfTheSameDocument()
+    {
+        var (db, accessor, tenant) = NewTenantDb("reconcile-notfound");
+        var id = await CreateTimedOutDocumentAsync(db, accessor, tenant);
+        await using var _ = db;
+        var cdcBefore = (await db.Documents.SingleAsync(item => item.Id == id)).Cdc;
+        var reconcile = new SifenInvoicing.Infrastructure.Invoices.EfSifenReconciliationService(
+            db, accessor, new StubQueryGateway(SifenCdcQueryOutcome.NotFound, "0420", null), new SystemClock());
+
+        var result = await reconcile.ReconcileAsync(id);
+        var retried = await NewLiveService(db, accessor, new FakeSubmissionGateway()).RetryAsync(id);
+
+        Assert.Equal(SifenReconciliationDecision.AllowResend, result.Decision);
+        Assert.Equal(SifenDocumentStatus.Accepted, retried.Status);
+        var document = await db.Documents.SingleAsync(item => item.Id == id);
+        Assert.Equal(cdcBefore, document.Cdc); // mismo DE, mismo CDC, sin nueva numeracion
+        Assert.Equal(1, await db.Documents.CountAsync());
+    }
+
+    [Fact]
+    public async Task Reconcile_ShouldRejectDocumentsThatAreNotIndeterminate()
+    {
+        var (db, accessor, tenant) = NewTenantDb("reconcile-approved");
+        await using var _ = db;
+        SeedRetryDependencies(db, tenant);
+        await db.SaveChangesAsync();
+        var created = await CreateInvoiceAsync(NewLiveService(db, accessor, new FakeSubmissionGateway()));
+        var reconcile = new SifenInvoicing.Infrastructure.Invoices.EfSifenReconciliationService(
+            db, accessor, new StubQueryGateway(SifenCdcQueryOutcome.NotFound, "0420", null), new SystemClock());
+
+        await Assert.ThrowsAsync<DomainException>(() => reconcile.ReconcileAsync(created.Id));
+    }
+
+    private sealed class StubQueryGateway(SifenCdcQueryOutcome outcome, string? code, string? protocol) : ISifenCdcQueryGateway
+    {
+        public Task<SifenCdcQueryResult> QueryByCdcAsync(QueryCdcCommand command, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new SifenCdcQueryResult(outcome, code, null, protocol, "<resp/>", null));
+    }
+
     private static void SeedRetryDependencies(SifenDbContext dbContext, Tenant tenant)
     {
         dbContext.Tenants.Add(tenant);
@@ -1033,6 +1149,17 @@ public sealed partial class InvoiceServiceTests
                 "SIFEN SOAP request timed out.",
                 null,
                 false));
+        }
+    }
+
+    /// <summary>Conexion rechazada antes de que SIFEN procese el DE (HTTP 403): transmision NotDelivered, reintento permitido.</summary>
+    private sealed class NotDeliveredSubmissionGateway : ISifenSubmissionGateway
+    {
+        public Task<SifenSubmissionResult> SendToSifenAsync(SendToSifenCommand command, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(new SifenSubmissionResult(
+                false, "https://sifen-test.set.gov.py/de/ws/sync/recibe.wsdl", null, "HTTP_ERROR|403|denied",
+                "<soapenv:Envelope />", "HTTP_ERROR", "denied", 403, false));
         }
     }
 
