@@ -36,6 +36,10 @@ public sealed class SifenDeXmlBuilder
         [2] = "Operación electrónica",
     };
 
+    public static IReadOnlyDictionary<int, string> SupportedTransactionTypes => TransactionTypes;
+
+    public static IReadOnlyDictionary<int, string> SupportedPresenceIndicators => PresenceIndicators;
+
     private static readonly IReadOnlyDictionary<int, string> IdentityDocuments = new Dictionary<int, string>
     {
         [1] = "Cédula paraguaya",

@@ -3,6 +3,7 @@ using SifenInvoicing.Api.Auth;
 using SifenInvoicing.Application.Invoices;
 using SifenInvoicing.Application.Operations;
 using SifenInvoicing.Application.Tenancy;
+using SifenInvoicing.Application.XmlDe;
 using SifenInvoicing.Domain.Tenants;
 using SifenInvoicing.Infrastructure.Invoices;
 using SifenInvoicing.Infrastructure.Persistence;
@@ -43,6 +44,9 @@ public static class InvoiceEndpoints
             .WithTags("FE")
             .RequireAuthorization(ApiAuthorization.InvoicesReadPolicy);
         app.MapGet("/api/fe/tenants/{tenantId:guid}/logs", GetTenantLogsAsync)
+            .WithTags("FE")
+            .RequireAuthorization(ApiAuthorization.InvoicesReadPolicy);
+        app.MapGet("/api/fe/catalogs", GetInvoiceCatalogs)
             .WithTags("FE")
             .RequireAuthorization(ApiAuthorization.InvoicesReadPolicy);
         app.MapPost("/api/fe/invoices/kude/preview", GenerateKudePreviewHtmlAsync)
@@ -164,6 +168,27 @@ public static class InvoiceEndpoints
             cancellationToken);
 
         return Results.Created($"/invoice/{result.Id}", result);
+    }
+
+    /// <summary>Catalogos que acepta la emision, tomados de las mismas tablas que valida el back (Manual v150).</summary>
+    public static FeInvoiceCatalogsResponse GetInvoiceCatalogs()
+    {
+        return new FeInvoiceCatalogsResponse(
+            SifenDeXmlBuilder.SupportedTransactionTypes
+                .OrderBy(item => item.Key)
+                .Select(item => new FeCatalogOption(item.Key, item.Value))
+                .ToArray(),
+            SifenDeXmlBuilder.SupportedPresenceIndicators
+                .OrderBy(item => item.Key)
+                .Select(item => new FeCatalogOption(item.Key, item.Value))
+                .ToArray(),
+            SifenDeUnitsOfMeasure.All
+                .OrderBy(item => item.Value, StringComparer.OrdinalIgnoreCase)
+                .Select(item => new FeCatalogOption(item.Key, item.Value))
+                .ToArray(),
+            [new FeCatalogOption(1, "Persona fisica"), new FeCatalogOption(2, "Persona juridica")],
+            Enum.GetNames<InvoiceReceiverDocumentType>(),
+            Enum.GetNames<InvoiceVatType>());
     }
 
     public static async Task<IResult> GetSimpleInvoiceStatusAsync(
@@ -494,6 +519,16 @@ public static class InvoiceEndpoints
         /// <summary>cUniMed (E709), Tabla 5 del Manual v150.</summary>
         public int? UnitCode { get; init; }
     }
+
+    public sealed record FeCatalogOption(int Code, string Description);
+
+    public sealed record FeInvoiceCatalogsResponse(
+        IReadOnlyCollection<FeCatalogOption> TransactionTypes,
+        IReadOnlyCollection<FeCatalogOption> PresenceIndicators,
+        IReadOnlyCollection<FeCatalogOption> UnitsOfMeasure,
+        IReadOnlyCollection<FeCatalogOption> ReceiverTaxpayerKinds,
+        IReadOnlyCollection<string> ReceiverDocumentTypes,
+        IReadOnlyCollection<string> VatTypes);
 
     public sealed class CreateSimpleInvoiceRequest : CreateInvoiceRequest
     {

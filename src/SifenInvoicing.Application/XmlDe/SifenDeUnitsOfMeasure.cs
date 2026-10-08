@@ -15,6 +15,8 @@ public static class SifenDeUnitsOfMeasure
         [869] = "ha", [569] = "ración",
     };
 
+    public static IReadOnlyDictionary<int, string> All => Table;
+
     public static bool TryGetRepresentation(int code, out string representation)
     {
         var found = Table.TryGetValue(code, out var value);
